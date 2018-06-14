@@ -99,6 +99,12 @@ if HAS_BITFURY
 cgminer_SOURCES += driver-bitfury.c driver-bitfury.h
 endif
 
+if HAS_TSB1101
+cgminer_SOURCES += driver-SPI-tsb1101.c
+cgminer_SOURCES += spi-context.c spi-context.h
+cgminer_SOURCES += tsb1101-common.h
+endif
+
 if HAS_BITMINE_A1
 cgminer_SOURCES += driver-SPI-bitmine-A1.c
 cgminer_SOURCES += spi-context.c spi-context.h

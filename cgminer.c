@@ -282,6 +282,9 @@ char *opt_drillbit_options = NULL;
 char *opt_drillbit_auto = NULL;
 #endif
 char *opt_bab_options = NULL;
+#ifdef USE_TSB1101
+char *opt_tsb1101_options = NULL;
+#endif
 #ifdef USE_BITMINE_A1
 char *opt_bitmine_a1_options = NULL;
 #endif
@@ -1596,6 +1599,11 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--bitmain-homemode",
 			opt_set_bool, &opt_bitmain_homemode,
 			opt_hidden),
+#endif
+#ifdef USE_TSB1101
+	OPT_WITH_ARG("--tsb1101-options",
+		     opt_set_charp, NULL, &opt_tsb1101_options,
+		     "TSB1101 options spi_clk_khz:sys_clk_mhz:uart_divider"),
 #endif
 #ifdef USE_BITMINE_A1
 	OPT_WITH_ARG("--bitmine-a1-options",

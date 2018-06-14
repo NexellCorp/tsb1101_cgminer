@@ -50,7 +50,11 @@ struct spi_ctx *spi_init(struct spi_config *config)
 	assert(ctx != NULL);
 
 	ctx->fd = fd;
+#ifndef	USE_TSB1101
 	ctx->config = *config;
+#else
+	memcpy(&ctx->config, config, sizeof(struct spi_config));
+#endif
 	applog(LOG_WARNING, "SPI '%s': mode=%hhu, bits=%hhu, speed=%u",
 	       dev_fname, ctx->config.mode, ctx->config.bits,
 	       ctx->config.speed);

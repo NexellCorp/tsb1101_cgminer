@@ -253,6 +253,7 @@ static inline int fsync (int fd)
 	DRIVER_ADD_COMMAND(icarus) \
 	DRIVER_ADD_COMMAND(klondike) \
 	DRIVER_ADD_COMMAND(knc) \
+	DRIVER_ADD_COMMAND(tsb1101) \
 	DRIVER_ADD_COMMAND(bitmineA1) \
 	DRIVER_ADD_COMMAND(drillbit) \
 	DRIVER_ADD_COMMAND(bab) \
@@ -1032,6 +1033,9 @@ extern char *opt_drillbit_auto;
 #endif
 #ifdef USE_BAB
 extern char *opt_bab_options;
+#endif
+#ifdef USE_TSB1101
+extern char *opt_tsb1101_options;
 #endif
 #ifdef USE_BITMINE_A1
 extern char *opt_bitmine_a1_options;

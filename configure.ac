@@ -283,6 +283,20 @@ fi
 AM_CONDITIONAL([HAS_BITFURY], [test x$bitfury = xyes])
 
 
+tsb1101="no"
+
+AC_ARG_ENABLE([tsb1101],
+	[AC_HELP_STRING([--enable-tsb1101],[Compile support for TSB1101 ASICs STANDALONE(default disabled)])],
+	[tsb1101=$enableval]
+	)
+if test "x$tsb1101" = xyes; then
+	AC_DEFINE([USE_TSB1101], [1], [Defined to 1 if TSB1101 support is wanted])
+	drivercount=x$drivercount
+	standalone="yes"
+fi
+AM_CONDITIONAL([HAS_TSB1101], [test x$tsb1101 = xyes])
+
+
 bitmine_A1="no"
 
 AC_ARG_ENABLE([bitmine_A1],
@@ -831,6 +845,12 @@ else
 fi
 
 
+if test "x$tsb1101" = xyes; then
+	echo "  TSB1101.ASICs.....: Enabled"
+else
+	echo "  TSB1101.ASICs.....: Disabled"
+fi
+
 if test "x$bitmine_A1" = xyes; then
 	echo "  Bitmine-A1.ASICs.....: Enabled"
 else
@@ -880,7 +900,7 @@ else
 fi
 
 #Add any new device to this, along with a no on the end of the test
-if test "x$avalon$avalon2$avalon4$avalon7$avalon_miner$bab$bflsc$bitforce$bitfury$blockerupter$gekko$hashfast$hashratio$icarus$klondike$knc$modminer$drillbit$minion$cointerra$bitmine_A1$ants1$ants2$ants3$sp10$sp30" = xnononononononononononononononononononononononononono; then
+if test "x$avalon$avalon2$avalon4$avalon7$avalon_miner$bab$bflsc$bitforce$bitfury$blockerupter$gekko$hashfast$hashratio$icarus$klondike$knc$modminer$drillbit$minion$cointerra$tsb1101$bitmine_A1$ants1$ants2$ants3$sp10$sp30" = xnonononononononononononononononononononononononononono; then
 	echo
 	AC_MSG_ERROR([No mining devices configured in])
 	echo
