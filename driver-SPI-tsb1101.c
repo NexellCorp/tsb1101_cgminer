@@ -81,6 +81,7 @@ enum TSB1101_command {
 	SPI_CMD_READ_JOB_ID		= 0x0C,
 	SPI_CMD_READ_RESULT		= 0x0D,
 	SPI_CMD_SET_CONTROL		= 0x12,
+	SPI_CMD_READ_TEMP		= 0x14,
 };
 
 /*
@@ -291,6 +292,18 @@ static uint8_t *cmd_WRITE_JOB(struct tsb1101_chain *tsb1101, uint8_t chip_id,
 		return NULL;
 	}
 	return ret;
+}
+
+static uint8_t cmd_READ_TEMP(struct tsb1101_chain *tsb1101, uint8_t chip_id)
+{
+	// TODO
+	uint8_t *ret = exec_cmd(tsb1101, SPI_CMD_READ_TEMP, chip, NULL, 0, 2);
+	if (ret == NULL || ret[0] != chip) {
+		applog(LOG_ERR, "%d: cmd_READ_TEMP chip %d failed",
+		       tsb1101->chain_id, chip);
+		return NULL;
+	}
+	return ret[1];
 }
 
 /********** tsb1101 low level functions */
@@ -756,6 +769,9 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 	if (tsb1101->last_temp_time + TEMP_UPDATE_INT_MS < get_current_ms()) {
 //		tsb1101->temp = board_selector->get_temp(0);
+		for (i = tsb1101->num_active_chips; i > 0; i--) {
+			tsb1101->temp[i-1] = cmd_READ_TEMP(tsb1101, i);
+		}
 		tsb1101->last_temp_time = get_current_ms();
 	}
 	int cid = tsb1101->chain_id;

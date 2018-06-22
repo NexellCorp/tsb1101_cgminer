@@ -19,7 +19,7 @@ struct work_queue {
 /********** chip and chain context structures */
 /* the WRITE_JOB command is the largest (2 bytes command, 56 bytes payload) */
 #define WRITE_JOB_LENGTH	(360/8+16/8)//58
-#define MAX_CHAIN_LENGTH	64
+#define MAX_CHAIN_LENGTH	256
 /*
  * For commands to traverse the chain, we need to issue dummy writes to
  * keep SPI clock running. To reach the last chip in the chain, we need to
@@ -64,7 +64,7 @@ struct tsb1101_chain {
 
 	/* mark chain disabled, do not try to re-enable it */
 	bool disabled;
-	uint8_t temp;
+	uint8_t temp[MAX_CHAIN_LENGTH];
 	int last_temp_time;
 };
 
