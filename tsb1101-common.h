@@ -18,7 +18,7 @@ struct work_queue {
 
 /********** chip and chain context structures */
 /* the WRITE_JOB command is the largest (2 bytes command, 56 bytes payload) */
-#define WRITE_JOB_LENGTH	58
+#define WRITE_JOB_LENGTH	(360/8+16/8)//58
 #define MAX_CHAIN_LENGTH	64
 /*
  * For commands to traverse the chain, we need to issue dummy writes to

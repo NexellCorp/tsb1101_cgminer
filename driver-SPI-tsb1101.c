@@ -498,12 +498,8 @@ static uint8_t *create_job(uint8_t chip_id, uint8_t job_id, struct work *work)
 		/* wdata */
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
-		/* start nonce */
-		0x00, 0x00, 0x00, 0x00,
-		/* difficulty 1 */
-		0xff, 0xff, 0x00, 0x1d,
-		/* end nonce */
-		0xff, 0xff, 0xff, 0xff,
+		/* select0, 1 */
+		0x00,
 	};
 	uint8_t *midstate = work->midstate;
 	uint8_t *wdata = work->data + 64;
@@ -517,7 +513,11 @@ static uint8_t *create_job(uint8_t chip_id, uint8_t job_id, struct work *work)
 	p1[0] = bswap_32(p2[0]);
 	p1[1] = bswap_32(p2[1]);
 	p1[2] = bswap_32(p2[2]);
-	// TODO: write to target
+	// calculate select0, 1 from target
+	uint8_t select0 = ((job[34+11]+1)>>2)-1;
+	uint8_t select1 = 4-((job[34+11]+1)&3);
+	job[34+12] = (select0<<4) + select1;
+
 	return job;
 }
 
