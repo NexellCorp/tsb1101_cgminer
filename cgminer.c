@@ -4123,6 +4123,16 @@ static bool benchfile_get_work(struct work *work)
 
 			calc_midstate(work);
 
+			uint32_t nbits, exp_nbits, man_nbits;
+			hex2bin(&nbits, commas[BENCHWORK_DIFFBITS], 4);
+			nbits = swab32(nbits);
+			exp_nbits = nbits>>24;
+			man_nbits = nbits&0xffffff;
+			work->target[exp_nbits-1] = (man_nbits >> 16)&0xff;
+			work->target[exp_nbits-2] = (man_nbits >>  8)&0xff;
+			work->target[exp_nbits-3] = (man_nbits >>  0)&0xff;
+			work->sdiff = diff_from_target(work->target);
+
 			benchfile_work++;
 
 			return true;
@@ -5109,11 +5119,12 @@ static bool test_work_current(struct work *work)
 	char hexstr[68];
 	bool ret = true;
 	unsigned char *bin_height = &pool->coinbase[43];
-	uint8_t cb_height_sz = bin_height[-1];
 	uint32_t height = 0;
 
 	if (work->mandatory)
 		return ret;
+
+	uint8_t cb_height_sz = bin_height[-1];
 
 	swap256(bedata, work->data + 4);
 	__bin2hex(hexstr, bedata, 32);
@@ -7565,6 +7576,9 @@ static void submit_work_async(struct work *work)
 
 		applog(LOG_NOTICE, "Accepted %s %d benchmark share nonce %08x",
 		       cgpu->drv->name, cgpu->device_id, *(uint32_t *)(work->data + 64 + 12));
+		return;
+	}
+	if (opt_benchfile) {
 		return;
 	}
 
