@@ -520,7 +520,7 @@ fi
 
 
 #Add a new device to this list if it needs libusb, along with a no on the end.
-if test x$avalon$avalon2$avalon4$avalon7$avalon_miner$bitforce$bitfury$blockerupter$gekko$modminer$bflsc$icarus$hashfast$hashratio$klondike$drillbit$cointerra$ants1$ants3 != xnonononononononononononononononononono; then
+if test x$avalon$avalon2$avalon4$avalon7$avalon_miner$bitforce$bitfury$blockerupter$tsb1101$gekko$modminer$bflsc$icarus$hashfast$hashratio$klondike$drillbit$cointerra$ants1$ants3 != xnonononononononononononononononononono; then
 	want_usbutils=true
 else
 	want_usbutils=false
@@ -846,9 +846,9 @@ fi
 
 
 if test "x$tsb1101" = xyes; then
-	echo "  TSB1101.ASICs.....: Enabled"
+	echo "  TSB1101.ASICs........: Enabled"
 else
-	echo "  TSB1101.ASICs.....: Disabled"
+	echo "  TSB1101.ASICs........: Disabled"
 fi
 
 if test "x$bitmine_A1" = xyes; then

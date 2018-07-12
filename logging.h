@@ -28,6 +28,9 @@ extern int opt_log_level;
 
 #define LOGBUFSIZ 256
 
+extern void applog_hexdump(char *prefix, unsigned char *buff, int len, int level);
+extern void hexdump(char *prefix, unsigned char *buff, int len);
+extern void hexdump_error(char *prefix, unsigned char *buff, int len);
 extern void _applog(int prio, const char *str, bool force);
 extern void _simplelog(int prio, const char *str, bool force);
 

@@ -107,3 +107,34 @@ void _simplelog(int prio, const char *str, bool force)
 		my_log_curses(prio, "", str, force);
 	}
 }
+
+void applog_hexdump(char *prefix, unsigned char *buff, int len, int level)
+{
+	static char line[256];
+	char *pos = line;
+	int i;
+	if (len < 1)
+		return;
+
+	pos += sprintf(pos, "%s: %d bytes:", prefix, len);
+	for (i = 0; i < len; i++) {
+		if (i > 0 && (i % 32) == 0) {
+			applog(LOG_DEBUG, "%s", line);
+			pos = line;
+			pos += sprintf(pos, "\t");
+		}
+		pos += sprintf(pos, "%.2X ", buff[i]);
+	}
+	applog(level, "%s", line);
+}
+
+void hexdump(char *prefix, unsigned char *buff, int len)
+{
+	applog_hexdump(prefix, buff, len, LOG_DEBUG);
+}
+
+void hexdump_error(char *prefix, unsigned char *buff, int len)
+{
+	applog_hexdump(prefix, buff, len, LOG_ERR);
+}
+

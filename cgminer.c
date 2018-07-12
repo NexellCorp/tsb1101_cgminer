@@ -2243,6 +2243,7 @@ static void calc_midstate(struct work *work)
 	sha256_update(&ctx, data, 64);
 	cg_memcpy(work->midstate, ctx.h, 32);
 	endian_flip32(work->midstate, work->midstate);
+//	hexdump("work->midstate32", work->midstate, 32);
 }
 
 /* Returns the current value of total_work and increments it */
@@ -4096,7 +4097,13 @@ static bool benchfile_get_work(struct work *work)
 					benchfile_data[BENCHWORK_NONCETIME].length);
 			}
 
+#if 0
 			sprintf(item, "0000000%c", commas[BENCHWORK_VERSION][0]);
+#else
+			uint32_t ver;
+		   	ver = strtoul(commas[BENCHWORK_VERSION], NULL, 16);
+			sprintf(item, "%08x", ver);
+#endif
 
 			j = strlen(item);
 			for (i = benchfile_data[BENCHWORK_PREVHASH].length-8; i >= 0; i -= 8) {
@@ -4124,7 +4131,7 @@ static bool benchfile_get_work(struct work *work)
 			calc_midstate(work);
 
 			uint32_t nbits, exp_nbits, man_nbits;
-			hex2bin(&nbits, commas[BENCHWORK_DIFFBITS], 4);
+			hex2bin((uint8_t *)&nbits, commas[BENCHWORK_DIFFBITS], 4);
 			nbits = swab32(nbits);
 			exp_nbits = nbits>>24;
 			man_nbits = nbits&0xffffff;
@@ -7516,6 +7523,8 @@ static void set_benchmark_work(struct cgpu_info *cgpu, struct work *work)
 		cg_memcpy(work, &bench_hidiff_bins[cgpu->hidiff][0], 160);
 	} else
 		cg_memcpy(work, &bench_lodiff_bins[cgpu->lodiff][0], 160);
+	hexdump("set work: data ", work->data, 128);
+	hexdump("set work: mid ", work->midstate, 32);
 }
 
 struct work *get_work(struct thr_info *thr, const int thr_id)

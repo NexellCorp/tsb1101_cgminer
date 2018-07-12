@@ -55,9 +55,9 @@ struct spi_ctx *spi_init(struct spi_config *config)
 #else
 	memcpy(&ctx->config, config, sizeof(struct spi_config));
 #endif
-	applog(LOG_WARNING, "SPI '%s': mode=%hhu, bits=%hhu, speed=%u",
+	applog(LOG_WARNING, "SPI '%s': mode=%hhu, bits=%hhu, speed=%u, fd=0x%08x",
 	       dev_fname, ctx->config.mode, ctx->config.bits,
-	       ctx->config.speed);
+	       ctx->config.speed, fd);
 	return ctx;
 }
 
@@ -76,6 +76,10 @@ extern bool spi_transfer(struct spi_ctx *ctx, uint8_t *txbuf,
 	struct spi_ioc_transfer xfr;
 	int ret;
 
+	if(len&0x3) {
+		applog(LOG_ERR, "SPI: length must be 4bytes align, %d is not allowed\n", len);
+		return -1;
+	}
 	if (rxbuf != NULL)
 		memset(rxbuf, 0xff, len);
 
@@ -87,12 +91,15 @@ extern bool spi_transfer(struct spi_ctx *ctx, uint8_t *txbuf,
 	xfr.speed_hz = ctx->config.speed;
 	xfr.delay_usecs = ctx->config.delay;
 	xfr.bits_per_word = ctx->config.bits;
-	xfr.cs_change = 0;
+	xfr.cs_change = 1;
+	xfr.tx_nbits = 0;
+	xfr.rx_nbits = 0;
 	xfr.pad = 0;
 
 	ret = ioctl(ctx->fd, SPI_IOC_MESSAGE(1), &xfr);
-	if (ret < 1)
+	if (ret < 1) {
 		applog(LOG_ERR, "SPI: ioctl error on SPI device: %d", ret);
+	}
 
 	return ret > 0;
 }
