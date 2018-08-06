@@ -127,11 +127,11 @@ static uint8_t *exec_cmd(struct tsb1101_chain *tsb1101,
 
 	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
 
-//	if((tsb1101->spi_tx[0] != 0) ||
-//		(tsb1101->spi_rx[4] < (MAX_JOB_ID_NUM-1))) {
+	if((tsb1101->spi_tx[0] != SPI_CMD_READ_ID) ||
+		(tsb1101->spi_rx[4] != 3)) {
 		hexdump("send: TX", tsb1101->spi_tx, tx_len);
 		hexdump("send: RX", tsb1101->spi_rx, tx_len);
-//	}
+	}
 
 	return (tsb1101->spi_rx + 2 + len);
 }
@@ -289,6 +289,7 @@ static uint8_t *cmd_RESET_BCAST(struct tsb1101_chain *tsb1101, uint8_t strategy)
 		applog(LOG_ERR, "%d: cmd_RESET_BCAST failed", tsb1101->chain_id);
 		return NULL;
 	}
+	applog(LOG_DEBUG, "%d: cmd_RESET_BCAST", tsb1101->chain_id);
 	return ret;
 }
 
@@ -299,16 +300,15 @@ static uint8_t *cmd_READ_RESULT_BCAST(struct tsb1101_chain *tsb1101)
 	tsb1101->spi_tx[0] = SPI_CMD_READ_JOB_ID;
 
 	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-//	if((tsb1101->spi_rx[2] != 0xff) &&
-//		(tsb1101->spi_rx[3] != 0xff) &&
-//		(tsb1101->spi_rx[4] != 0xff) &&
-//		(tsb1101->spi_rx[5] != 0xff) &&
-//		(tsb1101->spi_rx[6] != 0xff) &&
-//		(tsb1101->spi_rx[7] != 0xff) ) {
+	if((tsb1101->spi_rx[2] != 0xff) &&
+		(tsb1101->spi_rx[3] != 0xff) &&
+		(tsb1101->spi_rx[4] != 0xff) &&
+		(tsb1101->spi_rx[5] != 0xff) &&
+		(tsb1101->spi_rx[6] != 0xff) &&
+		(tsb1101->spi_rx[7] != 0xff) ) {
 		hexdump("send: TX", tsb1101->spi_tx, tx_len);
 		hexdump("send: RX", tsb1101->spi_rx, tx_len);
-//	}
+	}
 
 	uint8_t *scan = tsb1101->spi_rx;
 	scan+=2;
@@ -818,7 +818,7 @@ static bool set_work(struct tsb1101_chain *tsb1101, uint8_t chip_id, struct work
 	} else {
 		chip->work[chip->last_queued_id] = work;
 		chip->last_queued_id++;
-		chip->last_queued_id &= 3;
+		chip->last_queued_id &= JOB_ID_NUM_MASK;
 	}
 	return retval;
 }
@@ -864,7 +864,7 @@ static bool get_nonce(struct tsb1101_chain *tsb1101, uint8_t *nonce,
 	}
 
 	if ((ret[2]&(1<<1)) != 0) {
-		applog(LOG_ERR, "%d: job %x: out of nonce(chip%d)", tsb1101->chain_id, ret[0], ret[3]);
+		applog(LOG_DEBUG, "%d: job %x: out of nonce(chip%d)", tsb1101->chain_id, ret[0], ret[3]);
 		// clear interrupt
 		*job_id = ret[0];
 		*chip = ret[3];
@@ -876,7 +876,7 @@ static bool get_nonce(struct tsb1101_chain *tsb1101, uint8_t *nonce,
 	}
 	if ((ret[2]&1) != 0) {
 		uint32_t *real_nonce;
-		applog(LOG_ERR, "%d: job 0x%x: golden nonce(chip%d)", tsb1101->chain_id, ret[1], ret[3]);
+		applog(LOG_DEBUG, "%d: job 0x%x: golden nonce(chip%d)", tsb1101->chain_id, ret[1], ret[3]);
 		// clear interrupt
 		*job_id = ret[1];
 		*chip = ret[3];
@@ -887,7 +887,7 @@ static bool get_nonce(struct tsb1101_chain *tsb1101, uint8_t *nonce,
 		*ret32 = bswap_32(*ret32);
 		*ret32 -= (tsb1101->chips[*chip-1].hash_depth*tsb1101->chips[*chip-1].num_cores);
 		int cid = tsb1101->chain_id;
-		applog(LOG_ERR, "%d: nonce = 0x%08x", cid, *ret32);
+		applog(LOG_DEBUG, "%d: nonce = 0x%08x", cid, *ret32);
 
 //		memcpy(nonce, ret32, 4);
 		*nonce32 = bswap_32(*ret32);
@@ -907,8 +907,19 @@ static bool get_nonce(struct tsb1101_chain *tsb1101, uint8_t *nonce,
 /* reset input work queues in chip chain */
 static bool abort_work(struct tsb1101_chain *tsb1101)
 {
+	bool ret;
+	int i;
 	/* drop jobs already queued: reset strategy 0xed */
-	return cmd_RESET_BCAST(tsb1101, 0xed);
+	ret = cmd_RESET_BCAST(tsb1101, 0xed);
+
+	tsb1101->num_cores = 0;
+	for (i = 0; i < tsb1101->num_active_chips; i++)
+		cmd_BIST_BCAST(tsb1101, i+1);
+
+	for (i = 0; i < tsb1101->num_active_chips; i++)
+		check_chip(tsb1101, i+1);
+
+	return ret;
 }
 
 /********** driver interface */
@@ -944,6 +955,7 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	if (!set_pll_config(tsb1101, 0, tsb1101_config_options.pll, tsb1101_config_options.udiv))
 		goto failure;
 
+	tsb1101->num_cores = 0;
 	for (i = 0; i < tsb1101->num_active_chips; i++)
 		cmd_BIST_BCAST(tsb1101, i+1);
 
@@ -1176,7 +1188,7 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 	}
 	/* in case of no progress, prevent busy looping */
 	if (!work_updated)
-		cgsleep_ms(40);
+		cgsleep_us(40);
 
 	return (int64_t)nonce_ranges_processed << 32;
 }

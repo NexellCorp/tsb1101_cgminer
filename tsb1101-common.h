@@ -29,8 +29,8 @@ struct work_queue {
  */
 #define MAX_CMD_LENGTH		(360/8+16/8)	// param + command
 
-#define MAX_JOB_ID_NUM	4
-#define JOB_ID_NUM_MASK	3	/* total 4 */
+#define MAX_JOB_ID_NUM	64
+#define JOB_ID_NUM_MASK	63	/* total 4 */
 
 struct tsb1101_chip {
 	int num_cores;
