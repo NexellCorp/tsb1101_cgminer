@@ -708,6 +708,7 @@ static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id)
 		if((ret[0]&1)==0) break;
 		cgsleep_ms(200);
 	}
+	ret = exec_cmd(tsb1101, SPI_CMD_READ_BIST, chip_id, NULL, 0, 2);
 	if(ret[0]&1) {
 		applog(LOG_WARNING, "%d: error in READ_BIST", cid);
 		tsb1101->chips[chip_id-1].num_cores = 0;
@@ -1241,15 +1242,16 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 			       cid, chip_id);
 			continue;
 		}
-		if (job_id < 1 && job_id > 4) {
+		if (job_id < 1 && job_id > MAX_JOB_ID_NUM) {
 			applog(LOG_WARNING, "%d: chip %d: result has wrong "
 			       "job_id %d", cid, chip_id, job_id);
 			flush_spi(tsb1101);
 			continue;
 		}
 
-		struct tsb1101_chip *chip = &tsb1101->chips[chip_id - 1];
+		struct tsb1101_chip *chip = &tsb1101->chips[0];
 		struct work *work = chip->work[job_id - 1];
+		chip = &tsb1101->chips[chip_id - 1];
 		if (work == NULL) {
 			/* already been flushed => stale */
 			applog(LOG_WARNING, "%d: chip %d: stale nonce 0x%08x",
