@@ -30,7 +30,7 @@ struct work_queue {
 #define MAX_CMD_LENGTH		(360/8+16/8)	// param + command
 
 #define MAX_JOB_ID_NUM	64
-#define JOB_ID_NUM_MASK	63	/* total 4 */
+#define JOB_ID_NUM_MASK	(MAX_JOB_ID_NUM-1)	/* total 4 */
 
 struct tsb1101_chip {
 	int num_cores;
@@ -61,6 +61,7 @@ struct tsb1101_chain {
 	int num_cores;
 	int num_active_chips;
 	int chain_skew;
+	double		sdiff;
 	uint8_t spi_tx[MAX_CMD_LENGTH+2];	// 2 for response
 	uint8_t spi_rx[MAX_CMD_LENGTH+2];	// 2 for response
 	struct spi_ctx *spi_ctx;

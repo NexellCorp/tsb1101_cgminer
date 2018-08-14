@@ -4985,8 +4985,10 @@ static void *restart_thread(void __maybe_unused *arg)
 
 	for (i = 0; i < mt; i++) {
 		cgpu = mining_thr[i]->cgpu;
+//		applog(LOG_DEBUG, "mining_thr[%d]->cgpu = %p", i, (int)cgpu);
 		if (unlikely(!cgpu))
 			continue;
+//		applog(LOG_DEBUG, "mining_thr[%d]->cgpu->deven = %d", i, (int)cgpu->deven);
 		if (cgpu->deven != DEV_ENABLED)
 			continue;
 		mining_thr[i]->work_restart = true;

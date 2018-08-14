@@ -44,5 +44,7 @@ extern void spi_exit(struct spi_ctx *ctx);
 /* process RX/TX transfer, ensure buffers are long enough */
 extern bool spi_transfer(struct spi_ctx *ctx, uint8_t *txbuf,
 			 uint8_t *rxbuf, int len);
+extern bool spi_transfer_x20(struct spi_ctx *ctx, uint8_t *txbuf,
+			 uint8_t *rxbuf, int len);
 
 #endif /* SPI_CONTEXT_H */
