@@ -44,6 +44,10 @@ struct tsb1101_chip {
 	int nonce_ranges_done;
 	int hash_depth;
 	int rev;
+	uint64_t mhz;
+	uint64_t perf;
+	uint32_t start_nonce;
+	uint32_t end_nonce;
 
 	/* systime in ms when chip was disabled */
 	int cooldown_begin;
@@ -53,17 +57,22 @@ struct tsb1101_chip {
 	bool disabled;
 };
 
+#define	MAX_CHIP_NUM	128
 struct tsb1101_chain {
 	int chain_id;
 	struct cgpu_info *cgpu;
 //	struct mcp4x *trimpot;
 	int num_chips;
 	int num_cores;
+	uint64_t perf;
 	int num_active_chips;
 	int chain_skew;
 	double		sdiff;
 	uint8_t spi_tx[MAX_CMD_LENGTH+2];	// 2 for response
 	uint8_t spi_rx[MAX_CMD_LENGTH+2];	// 2 for response
+	uint8_t *spi_tx_a;
+	uint8_t *spi_rx_a;
+	struct spi_ioc_transfer *xfr;
 	struct spi_ctx *spi_ctx;
 	struct tsb1101_chip *chips;
 	pthread_mutex_t lock;

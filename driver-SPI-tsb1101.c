@@ -407,208 +407,126 @@ static uint32_t nbits_from_target(unsigned char *target)
 	return ret;
 }
 
-static uint8_t *cmd_WRITE_JOB(struct tsb1101_chain *tsb1101, uint8_t chip_id,
+static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 			      uint8_t job_id, uint8_t *job, struct work *work)
 {
-	uint8_t *ret = &tsb1101->spi_rx[2];
+	int ii=0, spi_len0, spi_len1, spi_len2, ret = 0;
 	/* ensure we push the SPI command to the last chip in chain */
+	uint8_t *spi_tx_a, *spi_rx_a;
+	struct spi_ioc_transfer *xfr = tsb1101->xfr;
+
 	int tx_len = ALIGN((WRITE_JOB_LENGTH + 2), 4);
+
+	// WRITE_PARM
 	memset(tsb1101->spi_tx, 0, tx_len);
 	memcpy(tsb1101->spi_tx, job, WRITE_JOB_LENGTH+2);
-
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+//	assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, NULL, tx_len));
 	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-//	ret = &tsb1101->spi_rx[WRITE_JOB_LENGTH+2];
-//	if (ret[0] != SPI_CMD_WRITE_PARM || ret[1] != chip_id) {
-//		applog(LOG_ERR, "%d: SPI_CMD_WRITE_PARM chip %d failed",
-//		       tsb1101->chain_id, chip_id);
-//		ret = NULL;
-//	}
+	xfr[0].tx_buf = (unsigned long)tsb1101->spi_tx;
+	xfr[0].rx_buf = (unsigned long)NULL;
+	xfr[0].len = tx_len;
+	xfr[0].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[0].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[0].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[0].tx_nbits = 0;
+	xfr[0].rx_nbits = 0;
+	xfr[0].pad = 0;
 
-	/* nonce */
-	tx_len = ALIGN((2 + 8 + 2), 4);
-	uint32_t *start_nonce = (uint32_t *)(tsb1101->spi_tx+2  );
-	uint32_t *  end_nonce = (uint32_t *)(tsb1101->spi_tx+2+4);
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memset(tsb1101->spi_rx, 0, tx_len);
-	*start_nonce = 0;
-//	  *end_nonce = 0xffffff00;
-	  *end_nonce = 0xffffffff;
-	tsb1101->spi_tx[0] = SPI_CMD_WRITE_NONCE;
-	tsb1101->spi_tx[1] = chip_id;
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-//	ret = &tsb1101->spi_rx[2+8];
-//	if (ret[0] != SPI_CMD_WRITE_NONCE || ret[1] != chip_id) {
-//		applog(LOG_ERR, "%d: SPI_CMD_WRITE_NONCE chip %d failed",
-//		       tsb1101->chain_id, chip_id);
-//		ret = NULL;
-//	}
+	// CLEAR_OON
 
-	/* target */
-	tx_len = ALIGN((2 + 4 + 2 + 2), 4);
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memset(tsb1101->spi_rx, 0, tx_len);
-	uint32_t nbits = nbits_from_target(work->target);
-	uint32_t *nbits_ptr = (uint32_t *)(tsb1101->spi_tx+2);
-	uint8_t *nbits_ptr_b = (uint8_t *)(tsb1101->spi_tx+2);
-	uint8_t *select = (uint8_t *)(tsb1101->spi_tx+2+4);
-	*nbits_ptr = nbits;
-	select[0] = select[1] = nbits_ptr_b[3];
-	select[0] = ((select[0]-1)>>2)-1;
-	select[1] = (((select[1]-1)&3)+1)<<4;;
-	*nbits_ptr = bswap_32(nbits);
-	tsb1101->spi_tx[0] = SPI_CMD_WRITE_TARGET;
-	tsb1101->spi_tx[1] = chip_id;
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-//	hexdump("target", work->target, 32);
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-//	ret = &tsb1101->spi_rx[2+4+2];
-//	if (ret[0] != SPI_CMD_WRITE_TARGET || ret[1] != chip_id) {
-//		applog(LOG_ERR, "%d: SPI_CMD_WRITE_TARGET chip %d failed",
-//		       tsb1101->chain_id, chip_id);
-//		ret = NULL;
-//	}
+	spi_tx_a = tsb1101->spi_tx_a;
+	hexdump("send: TX", spi_tx_a, 4);
+	xfr[1].tx_buf = (unsigned long)tsb1101->spi_tx;
+	xfr[1].rx_buf = (unsigned long)NULL;
+	xfr[1].len = 4;
+	xfr[1].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[1].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[1].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[1].tx_nbits = 0;
+	xfr[1].rx_nbits = 0;
+	xfr[1].pad = 0;
 
-	/* run */
-	tx_len = ALIGN((2 + 2 + 2), 4);
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memset(tsb1101->spi_rx, 0, tx_len);
-	tsb1101->spi_tx[0] = SPI_CMD_RUN_JOB;
-	tsb1101->spi_tx[1] = chip_id;
-	tsb1101->spi_tx[3] = job_id;
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-//	ret = &tsb1101->spi_rx[2+2];
-//	if (ret[0] != SPI_CMD_RUN_JOB || ret[1] != chip_id) {
-//		applog(LOG_ERR, "%d: SPI_CMD_RUN_JOB chip %d failed",
-//		       tsb1101->chain_id, chip_id);
-//		ret = NULL;
-//	}
-
-	return ret;
-}
-
-static uint8_t *cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
-			      uint8_t job_id, uint8_t *job, struct work *work)
-{
-	int ii;
-	uint8_t *ret = &tsb1101->spi_rx[2];
-	/* ensure we push the SPI command to the last chip in chain */
-	int tx_len = ALIGN((WRITE_JOB_LENGTH + 2), 4);
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memcpy(tsb1101->spi_tx, job, WRITE_JOB_LENGTH+2);
-
-	assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-#if 0
-	ret = &tsb1101->spi_rx[WRITE_JOB_LENGTH+2];
-	if (ret[0] != SPI_CMD_WRITE_PARM) {
-		applog(LOG_ERR, "%d: SPI_CMD_WRITE_PARM failed",
-		       tsb1101->chain_id);
-		ret = NULL;
-	}
-#endif
-	tsb1101->spi_tx[0] = SPI_CMD_READ_PARM;
-	tsb1101->spi_tx[1] = 1;
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-
-	/* nonce */
-	tx_len = ALIGN((2 + 8 + 2), 4);
-	uint32_t *start_nonce_ptr = (uint32_t *)(tsb1101->spi_tx+2  );
-	uint32_t *  end_nonce_ptr = (uint32_t *)(tsb1101->spi_tx+2+4);
-	uint32_t start_nonce, end_nonce = 0xffffffff;
-	uint32_t nonce_range = 0xffffffff/tsb1101->num_active_chips;
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memset(tsb1101->spi_rx, 0, tx_len);
-	tsb1101->spi_tx[0] = SPI_CMD_WRITE_NONCE;
+	// WRITE_NONCE
+	uint32_t *start_nonce_ptr;
+	uint32_t *  end_nonce_ptr;
 	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
-		start_nonce =   end_nonce +1;
-		if(ii==(tsb1101->num_active_chips-1))
-			  end_nonce = 0xffffffff;
-		else
-			  end_nonce = start_nonce +(nonce_range-1);
-		applog(LOG_DEBUG, "chip%d nonce : 0x%08x ~ 0x%08x", ii+1, start_nonce, end_nonce);
-		*start_nonce_ptr = bswap_32(start_nonce);
-		  *end_nonce_ptr = bswap_32(end_nonce);
-		tsb1101->spi_tx[1] = ii+1;
-		assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-		hexdump("send: TX", tsb1101->spi_tx, tx_len);
-		hexdump("send: RX", tsb1101->spi_rx, tx_len);
-#if 0
-		ret = &tsb1101->spi_rx[2+8];
-		if (ret[0] != SPI_CMD_WRITE_NONCE || ret[1] != (ii+1)) {
-			applog(LOG_ERR, "%d: SPI_CMD_WRITE_NONCE chip %d failed",
-				   tsb1101->chain_id, chip_id);
-			ret = NULL;
-		}
-#endif
+		spi_tx_a = tsb1101->spi_tx_a+((ii+1)*12);
+		start_nonce_ptr = (uint32_t *)(spi_tx_a+2  );
+		end_nonce_ptr   = (uint32_t *)(spi_tx_a+2+4);
+		spi_tx_a[0] = SPI_CMD_WRITE_NONCE;
+
+		*start_nonce_ptr = bswap_32(tsb1101->chips[ii].start_nonce);
+		  *end_nonce_ptr = bswap_32(tsb1101->chips[ii].end_nonce);
+		spi_tx_a[1] = ii+1;
+		spi_tx_a[10] = spi_tx_a[11] = 0;
+		hexdump("send: TX", spi_tx_a, 11);
+
+		xfr[ii+2].tx_buf = (unsigned long)spi_tx_a;
+		xfr[ii+2].rx_buf = (unsigned long)NULL;
+		xfr[ii+2].len = 11;
+		xfr[ii+2].speed_hz = tsb1101->spi_ctx->config.speed*20;
+		xfr[ii+2].delay_usecs = tsb1101->spi_ctx->config.delay;
+		xfr[ii+2].bits_per_word = tsb1101->spi_ctx->config.bits;
+		xfr[ii+2].tx_nbits = 0;
+		xfr[ii+2].rx_nbits = 0;
+		xfr[ii+2].pad = 0;
 	}
 
+	ii+=2;
+	// WRITE_TARGET
 	if(tsb1101->sdiff != work->sdiff)
 	{
 		tsb1101->sdiff = work->sdiff;
 		/* target */
-		tx_len = ALIGN((2 + 4 + 2 + 2), 4);
-		memset(tsb1101->spi_tx, 0, tx_len);
-		memset(tsb1101->spi_rx, 0, tx_len);
+		spi_tx_a = tsb1101->spi_tx_a+((ii-1)*12);
 		uint32_t nbits = nbits_from_target(work->target);
-		uint32_t *nbits_ptr = (uint32_t *)(tsb1101->spi_tx+2);
-		uint8_t *nbits_ptr_b = (uint8_t *)(tsb1101->spi_tx+2);
-		uint8_t *select = (uint8_t *)(tsb1101->spi_tx+2+4);
+		uint32_t *nbits_ptr = (uint32_t *)(spi_tx_a+2);
+		uint8_t *nbits_ptr_b = (uint8_t *)(spi_tx_a+2);
+		uint8_t *select = (uint8_t *)(spi_tx_a+2+4);
 		*nbits_ptr = nbits;
 		select[0] = select[1] = nbits_ptr_b[3];
 		select[0] = ((select[0]-1)>>2)-1;
 		select[1] = (((select[1]-1)&3)+1)<<4;;
 		*nbits_ptr = bswap_32(nbits);
-		tsb1101->spi_tx[0] = SPI_CMD_WRITE_TARGET;
-		tsb1101->spi_tx[1] = 0;
-		assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	//	hexdump("target", work->target, 32);
-		hexdump("send: TX", tsb1101->spi_tx, tx_len);
-		hexdump("send: RX", tsb1101->spi_rx, tx_len);
-#if 0
-		ret = &tsb1101->spi_rx[2+4+2];
-		if (ret[0] != SPI_CMD_WRITE_TARGET || ret[1] != chip_id) {
-			applog(LOG_ERR, "%d: SPI_CMD_WRITE_TARGET chip %d failed",
-				   tsb1101->chain_id, chip_id);
-			ret = NULL;
-		}
-#endif
-	}
-	tsb1101->spi_tx[0] = SPI_CMD_READ_TARGET;
-	tsb1101->spi_tx[1] = 1;
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
+		spi_tx_a[0] = SPI_CMD_WRITE_TARGET;
+		spi_tx_a[1] = 0;
+		spi_tx_a[8] = spi_tx_a[9] = spi_tx_a[10] = spi_tx_a[11] = 0;
+		hexdump("send: TX", spi_tx_a, 9);
 
-	/* run */
-	tx_len = ALIGN((2 + 2 + 2), 4);
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memset(tsb1101->spi_rx, 0, tx_len);
-	tsb1101->spi_tx[0] = SPI_CMD_RUN_JOB;
-	tsb1101->spi_tx[1] = 0;
-	tsb1101->spi_tx[3] = job_id;
-	assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-#if 0
-	ret = &tsb1101->spi_rx[2+2];
-	if (ret[0] != SPI_CMD_RUN_JOB || ret[1] != chip_id) {
-		applog(LOG_ERR, "%d: SPI_CMD_RUN_JOB chip %d failed",
-		       tsb1101->chain_id, chip_id);
-		ret = NULL;
-	}
-#endif
+		xfr[ii].tx_buf = (unsigned long)spi_tx_a;
+		xfr[ii].rx_buf = (unsigned long)NULL;
+		xfr[ii].len = 9;
+		xfr[ii].speed_hz = tsb1101->spi_ctx->config.speed*20;
+		xfr[ii].delay_usecs = tsb1101->spi_ctx->config.delay;
+		xfr[ii].bits_per_word = tsb1101->spi_ctx->config.bits;
+		xfr[ii].tx_nbits = 0;
+		xfr[ii].rx_nbits = 0;
+		xfr[ii].pad = 0;
 
-	return ret;
+		ii += 1;
+	}
+
+	// RUN_JOB
+	spi_tx_a = tsb1101->spi_tx_a+((ii-1)*12);
+	memset(spi_tx_a, 0, 12);
+	spi_tx_a[0] = SPI_CMD_RUN_JOB;
+	spi_tx_a[1] = 0;
+	spi_tx_a[3] = job_id;
+	hexdump("send: TX", spi_tx_a, 5);
+	xfr[ii].tx_buf = (unsigned long)spi_tx_a;
+	xfr[ii].rx_buf = (unsigned long)NULL;
+	xfr[ii].len = 5;
+	xfr[ii].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[ii].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[ii].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[ii].tx_nbits = 0;
+	xfr[ii].rx_nbits = 0;
+	xfr[ii].pad = 0;
+
+	ii += 1;
+
+	assert(spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
+	return true;
 }
 
 static uint8_t cmd_READ_TEMP(struct tsb1101_chain *tsb1101, uint8_t chip_id)
@@ -663,6 +581,8 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll, 
 
 	if(((tsb1101->chips[0].rev>>16)&0xf) == 0x0) {
 		applog(LOG_WARNING, "chip%d: skip PLL because FPGA", 1);
+		for(ii=from; ii<to; ii++)
+			tsb1101->chips[ii].mhz = 100;
 	}
 	else {
 		sbuf[0] = (uint8_t)(pll>>24)&0xff;
@@ -681,6 +601,8 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll, 
 					   cid, chip_id);
 				return false;
 			}
+			// TODO
+			tsb1101->chips[ii].mhz = 100;
 		}
 	}
 
@@ -720,6 +642,27 @@ static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id)
 	       cid, chip_id, tsb1101->chips[chip_id-1].num_cores);
 
 	tsb1101->num_cores += tsb1101->chips[chip_id-1].num_cores;
+	tsb1101->chips[chip_id-1].perf = tsb1101->chips[chip_id-1].num_cores*tsb1101->chips[chip_id-1].mhz;
+	applog(LOG_DEBUG, "%d: chip %d perf = %ld\n", cid, chip_id, tsb1101->chips[chip_id-1].perf);
+	tsb1101->perf += tsb1101->chips[chip_id-1].perf;
+
+	return true;
+}
+
+static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
+{
+	int ii;
+	tsb1101->chips[0].start_nonce = 0;
+	for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
+		tsb1101->chips[ii].end_nonce = tsb1101->chips[ii].start_nonce
+			+ ((0xffffffff*tsb1101->chips[ii].perf)/tsb1101->perf);
+		tsb1101->chips[ii+1].start_nonce = tsb1101->chips[ii].end_nonce+1;
+	}
+	tsb1101->chips[tsb1101->num_active_chips-1].end_nonce = 0xffffffff;
+
+	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
+		applog(LOG_DEBUG, "chip %2d : %08X ~ %08X", ii+1, tsb1101->chips[ii].start_nonce, tsb1101->chips[ii].end_nonce);
+	}
 
 	return true;
 }
@@ -764,7 +707,13 @@ static int chain_detect(struct tsb1101_chain *tsb1101)
 	tsb1101->num_active_chips = ii;
 
 	tsb1101->chips = calloc(tsb1101->num_active_chips, sizeof(struct tsb1101_chip));
+	tsb1101->xfr = calloc(tsb1101->num_active_chips+2, sizeof(struct spi_ioc_transfer)); // 2 for WRITE_TARGET, RUN_JOB
+	tsb1101->spi_tx_a = calloc((tsb1101->num_active_chips+2)*12, sizeof(uint8_t)); // 2 for WRITE_TARGET, RUN_JOB
+	tsb1101->spi_rx_a = calloc((tsb1101->num_active_chips+2)*12, sizeof(uint8_t)); // 2 for WRITE_TARGET, RUN_JOB
 	assert (tsb1101->chips != NULL);
+	assert (tsb1101->xfr != NULL);
+	assert (tsb1101->spi_tx_a != NULL);
+	assert (tsb1101->spi_rx_a != NULL);
 
 	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
 		ret = exec_cmd(tsb1101, SPI_CMD_READ_FEATURE, ii+1, NULL, 0, 4);
@@ -1052,6 +1001,9 @@ static bool abort_work(struct tsb1101_chain *tsb1101)
 
 	for (i = 0; i < tsb1101->num_active_chips; i++)
 		check_chip(tsb1101, i+1);
+	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
+
+	calc_nonce_range(tsb1101);
 
 	return ret;
 }
@@ -1090,10 +1042,14 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 		goto failure;
 
 	tsb1101->num_cores = 0;
+	tsb1101->perf = 0;
 	cmd_BIST_BCAST(tsb1101, 0);
 
 	for (i = 0; i < tsb1101->num_active_chips; i++)
 		check_chip(tsb1101, i+1);
+
+	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
+	calc_nonce_range(tsb1101);
 
 	applog(LOG_WARNING, "%d: found %d chips with total %d active cores",
 	       tsb1101->chain_id, tsb1101->num_active_chips, tsb1101->num_cores);
@@ -1231,9 +1187,6 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 	int cid = tsb1101->chain_id;
 	/* poll queued results */
 	while (true) {
-		tsb1101->spi_tx[0] = SPI_CMD_READ_ID;
-		tsb1101->spi_tx[1] = 1;
-		spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 8);
 		if (!get_nonce(tsb1101, (uint8_t*)&nonce, &chip_id, &job_id))
 			break;
 		work_updated = true;
@@ -1274,11 +1227,7 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 	/* check for completed works */
 	for (i = 0; i<2; i++) {
-		tsb1101->spi_tx[0] = SPI_CMD_READ_ID;
-		tsb1101->spi_tx[1] = 1;
-		spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 8);
 		if(job_pin() == '1') break;
-		cmd_CLEAR_OON(tsb1101, 0);
 
 		work_updated = true;
 

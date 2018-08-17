@@ -46,5 +46,7 @@ extern bool spi_transfer(struct spi_ctx *ctx, uint8_t *txbuf,
 			 uint8_t *rxbuf, int len);
 extern bool spi_transfer_x20(struct spi_ctx *ctx, uint8_t *txbuf,
 			 uint8_t *rxbuf, int len);
+extern bool spi_transfer_x20_a(struct spi_ctx *ctx, 
+		struct spi_ioc_transfer *xfr, int num);
 
 #endif /* SPI_CONTEXT_H */

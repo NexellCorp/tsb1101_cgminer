@@ -156,3 +156,19 @@ extern bool spi_transfer_x20(struct spi_ctx *ctx, uint8_t *txbuf,
 
 	return ret > 0;
 }
+
+extern bool spi_transfer_x20_a(struct spi_ctx *ctx, 
+		struct spi_ioc_transfer *xfr, int num)
+{
+	int ret, ii;
+
+//	write(fd_gpio, "1", 2);
+
+	ret = ioctl(ctx->fd, SPI_IOC_MESSAGE(num), xfr);
+//	write(fd_gpio, "0", 2);
+	if (ret < 1) {
+		applog(LOG_ERR, "SPIx20_a: ioctl error on SPI device: %d", ret);
+	}
+
+	return ret > 0;
+}
