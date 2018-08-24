@@ -35,6 +35,7 @@ static const struct spi_config default_spi_config = {
 struct spi_ctx {
 	int fd;
 	struct spi_config config;
+	uint8_t *txb;
 };
 
 /* create SPI context with given configuration, returns NULL on failure */

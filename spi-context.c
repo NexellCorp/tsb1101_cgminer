@@ -16,11 +16,11 @@
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <assert.h>
 #include <unistd.h>
 
 //static int fd_gpio;
-static unsigned int spi_rd_speed;
 struct spi_ctx *spi_init(struct spi_config *config)
 {
 	char dev_fname[PATH_MAX];
@@ -37,7 +37,6 @@ struct spi_ctx *spi_init(struct spi_config *config)
 		return NULL;
 	}
 
-	spi_rd_speed = config->speed;
 	if ((ioctl(fd, SPI_IOC_WR_MODE, &config->mode) < 0) ||
 	    (ioctl(fd, SPI_IOC_RD_MODE, &config->mode) < 0) ||
 	    (ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &config->bits) < 0) ||
@@ -62,6 +61,9 @@ struct spi_ctx *spi_init(struct spi_config *config)
 	       dev_fname, ctx->config.mode, ctx->config.bits,
 	       ctx->config.speed, fd);
 
+	ctx->txb = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if(ctx->txb == (void *)-1)
+		applog(LOG_ERR, "mmap failed");
 //	fd_gpio = open("/sys/class/gpio/export", O_WRONLY);
 //	write(fd_gpio, "42", 3);	// reset
 //	close(fd_gpio);

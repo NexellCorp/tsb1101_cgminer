@@ -412,17 +412,15 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 {
 	int ii=0, spi_len0, spi_len1, spi_len2, ret = 0;
 	/* ensure we push the SPI command to the last chip in chain */
-	uint8_t *spi_tx_a, *spi_rx_a;
+	uint8_t *spi_tx = job;
 	struct spi_ioc_transfer *xfr = tsb1101->xfr;
 
-	int tx_len = ALIGN((WRITE_JOB_LENGTH + 2), 4);
+	int tx_len;
 
+	tx_len = ALIGN((WRITE_JOB_LENGTH + 2), 4);
 	// WRITE_PARM
-	memset(tsb1101->spi_tx, 0, tx_len);
-	memcpy(tsb1101->spi_tx, job, WRITE_JOB_LENGTH+2);
-//	assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, NULL, tx_len));
-	hexdump("send: TX", tsb1101->spi_tx, tx_len);
-	xfr[0].tx_buf = (unsigned long)tsb1101->spi_tx;
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[0].tx_buf = (unsigned long)spi_tx;
 	xfr[0].rx_buf = (unsigned long)NULL;
 	xfr[0].len = tx_len;
 	xfr[0].speed_hz = tsb1101->spi_ctx->config.speed*20;
@@ -431,71 +429,52 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 	xfr[0].tx_nbits = 0;
 	xfr[0].rx_nbits = 0;
 	xfr[0].pad = 0;
+	spi_tx += tx_len;
 
 	// CLEAR_OON
+	tx_len = 4;
 
-	spi_tx_a = tsb1101->spi_tx_a;
-	hexdump("send: TX", spi_tx_a, 4);
-	xfr[1].tx_buf = (unsigned long)tsb1101->spi_tx;
+	spi_tx[0] = SPI_CMD_CLEAR_OON;
+	spi_tx[1] = 0;
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[1].tx_buf = (unsigned long)spi_tx;
 	xfr[1].rx_buf = (unsigned long)NULL;
-	xfr[1].len = 4;
+	xfr[1].len = tx_len;
 	xfr[1].speed_hz = tsb1101->spi_ctx->config.speed*20;
 	xfr[1].delay_usecs = tsb1101->spi_ctx->config.delay;
 	xfr[1].bits_per_word = tsb1101->spi_ctx->config.bits;
 	xfr[1].tx_nbits = 0;
 	xfr[1].rx_nbits = 0;
 	xfr[1].pad = 0;
+	spi_tx += tx_len; 
 
-	// WRITE_NONCE
-	uint32_t *start_nonce_ptr;
-	uint32_t *  end_nonce_ptr;
-	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
-		spi_tx_a = tsb1101->spi_tx_a+((ii+1)*12);
-		start_nonce_ptr = (uint32_t *)(spi_tx_a+2  );
-		end_nonce_ptr   = (uint32_t *)(spi_tx_a+2+4);
-		spi_tx_a[0] = SPI_CMD_WRITE_NONCE;
+	ii = 2;
 
-		*start_nonce_ptr = bswap_32(tsb1101->chips[ii].start_nonce);
-		  *end_nonce_ptr = bswap_32(tsb1101->chips[ii].end_nonce);
-		spi_tx_a[1] = ii+1;
-		spi_tx_a[10] = spi_tx_a[11] = 0;
-		hexdump("send: TX", spi_tx_a, 11);
-
-		xfr[ii+2].tx_buf = (unsigned long)spi_tx_a;
-		xfr[ii+2].rx_buf = (unsigned long)NULL;
-		xfr[ii+2].len = 11;
-		xfr[ii+2].speed_hz = tsb1101->spi_ctx->config.speed*20;
-		xfr[ii+2].delay_usecs = tsb1101->spi_ctx->config.delay;
-		xfr[ii+2].bits_per_word = tsb1101->spi_ctx->config.bits;
-		xfr[ii+2].tx_nbits = 0;
-		xfr[ii+2].rx_nbits = 0;
-		xfr[ii+2].pad = 0;
-	}
-
-	ii+=2;
 	// WRITE_TARGET
 	if(tsb1101->sdiff != work->sdiff)
 	{
+		tx_len = 9;
 		tsb1101->sdiff = work->sdiff;
 		/* target */
-		spi_tx_a = tsb1101->spi_tx_a+((ii-1)*12);
 		uint32_t nbits = nbits_from_target(work->target);
-		uint32_t *nbits_ptr = (uint32_t *)(spi_tx_a+2);
-		uint8_t *nbits_ptr_b = (uint8_t *)(spi_tx_a+2);
-		uint8_t *select = (uint8_t *)(spi_tx_a+2+4);
+		uint32_t *nbits_ptr = (uint32_t *)(spi_tx+2);
+		uint8_t *nbits_ptr_b = (uint8_t *)(spi_tx+2);
+		uint8_t *select = (uint8_t *)(spi_tx+2+4);
 		*nbits_ptr = nbits;
 		select[0] = select[1] = nbits_ptr_b[3];
 		select[0] = ((select[0]-1)>>2)-1;
 		select[1] = (((select[1]-1)&3)+1)<<4;;
 		*nbits_ptr = bswap_32(nbits);
-		spi_tx_a[0] = SPI_CMD_WRITE_TARGET;
-		spi_tx_a[1] = 0;
-		spi_tx_a[8] = spi_tx_a[9] = spi_tx_a[10] = spi_tx_a[11] = 0;
-		hexdump("send: TX", spi_tx_a, 9);
+		spi_tx[0] = SPI_CMD_WRITE_TARGET;
+		spi_tx[1] = 0;
+		spi_tx[8] = 0;
+		hexdump_error("send: TX", spi_tx, tx_len);
+		hexdump_error("target:", work->target, 32);
+		applog(LOG_ERR, "diff : %.2f", tsb1101->sdiff);
 
-		xfr[ii].tx_buf = (unsigned long)spi_tx_a;
+		xfr[ii].tx_buf = (unsigned long)spi_tx;
 		xfr[ii].rx_buf = (unsigned long)NULL;
-		xfr[ii].len = 9;
+		xfr[ii].len = tx_len;
 		xfr[ii].speed_hz = tsb1101->spi_ctx->config.speed*20;
 		xfr[ii].delay_usecs = tsb1101->spi_ctx->config.delay;
 		xfr[ii].bits_per_word = tsb1101->spi_ctx->config.bits;
@@ -504,18 +483,19 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 		xfr[ii].pad = 0;
 
 		ii += 1;
+		spi_tx += tx_len;
 	}
 
 	// RUN_JOB
-	spi_tx_a = tsb1101->spi_tx_a+((ii-1)*12);
-	memset(spi_tx_a, 0, 12);
-	spi_tx_a[0] = SPI_CMD_RUN_JOB;
-	spi_tx_a[1] = 0;
-	spi_tx_a[3] = job_id;
-	hexdump("send: TX", spi_tx_a, 5);
-	xfr[ii].tx_buf = (unsigned long)spi_tx_a;
+	tx_len = 5;
+	spi_tx[0] = SPI_CMD_RUN_JOB;
+	spi_tx[1] = 0;
+	spi_tx[2] = 0;
+	spi_tx[3] = job_id;
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[ii].tx_buf = (unsigned long)spi_tx;
 	xfr[ii].rx_buf = (unsigned long)NULL;
-	xfr[ii].len = 5;
+	xfr[ii].len = tx_len;
 	xfr[ii].speed_hz = tsb1101->spi_ctx->config.speed*20;
 	xfr[ii].delay_usecs = tsb1101->spi_ctx->config.delay;
 	xfr[ii].bits_per_word = tsb1101->spi_ctx->config.bits;
@@ -526,6 +506,7 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 	ii += 1;
 
 	assert(spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
+
 	return true;
 }
 
@@ -652,6 +633,10 @@ static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id)
 static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 {
 	int ii;
+	uint8_t *spi_tx = tsb1101->spi_tx;
+	uint32_t *start_nonce_ptr;
+	uint32_t *  end_nonce_ptr;
+
 	tsb1101->chips[0].start_nonce = 0;
 	for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
 		tsb1101->chips[ii].end_nonce = tsb1101->chips[ii].start_nonce
@@ -662,6 +647,19 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 
 	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
 		applog(LOG_DEBUG, "chip %2d : %08X ~ %08X", ii+1, tsb1101->chips[ii].start_nonce, tsb1101->chips[ii].end_nonce);
+
+		start_nonce_ptr = (uint32_t *)(spi_tx+2  );
+		end_nonce_ptr   = (uint32_t *)(spi_tx+2+4);
+		spi_tx[0] = SPI_CMD_WRITE_NONCE;
+
+		*start_nonce_ptr = bswap_32(tsb1101->chips[ii].start_nonce);
+		  *end_nonce_ptr = bswap_32(tsb1101->chips[ii].end_nonce);
+		spi_tx[1] = ii+1;
+		spi_tx[10] = 0;
+
+		spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 12);
+		hexdump("send: TX", tsb1101->spi_tx, 12);
+		hexdump("send: RX", tsb1101->spi_rx, 12);
 	}
 
 	return true;
@@ -707,13 +705,9 @@ static int chain_detect(struct tsb1101_chain *tsb1101)
 	tsb1101->num_active_chips = ii;
 
 	tsb1101->chips = calloc(tsb1101->num_active_chips, sizeof(struct tsb1101_chip));
-	tsb1101->xfr = calloc(tsb1101->num_active_chips+2, sizeof(struct spi_ioc_transfer)); // 2 for WRITE_TARGET, RUN_JOB
-	tsb1101->spi_tx_a = calloc((tsb1101->num_active_chips+2)*12, sizeof(uint8_t)); // 2 for WRITE_TARGET, RUN_JOB
-	tsb1101->spi_rx_a = calloc((tsb1101->num_active_chips+2)*12, sizeof(uint8_t)); // 2 for WRITE_TARGET, RUN_JOB
+	tsb1101->xfr = calloc(tsb1101->num_active_chips+4, sizeof(struct spi_ioc_transfer)); // 2 for WRITE_TARGET, RUN_JOB
 	assert (tsb1101->chips != NULL);
 	assert (tsb1101->xfr != NULL);
-	assert (tsb1101->spi_tx_a != NULL);
-	assert (tsb1101->spi_rx_a != NULL);
 
 	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
 		ret = exec_cmd(tsb1101, SPI_CMD_READ_FEATURE, ii+1, NULL, 0, 4);
@@ -826,22 +820,9 @@ uint32_t get_diff(double diff)
 	return n_bits;
 }
 
-static uint8_t *create_job(uint8_t chip_id, struct work *work)
+static uint8_t *create_job(uint8_t chip_id, uint8_t *job, struct work *work)
 {
-	static uint8_t job[WRITE_JOB_LENGTH+2+2+4] = {
-		/* command */
-		SPI_CMD_WRITE_PARM, 0x00, 
-		/* midstate */
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		/* wdata */
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00,
-		/* select0, 1 */
-		0x00, 0x00,
-	};
+	job[0] = SPI_CMD_WRITE_PARM;
 	uint8_t *midstate = work->midstate;
 	uint8_t *wdata = work->data + 64;
 
@@ -879,7 +860,7 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 		chip->work[chip->last_queued_id] = NULL;
 		retval = true;
 	}
-	uint8_t *jobdata = create_job(chip_id, work);
+	uint8_t *jobdata = create_job(chip_id, tsb1101->spi_ctx->txb, work);
 	if (!cmd_WRITE_JOB_fast(tsb1101, job_id, jobdata, work)) {
 		/* give back work */
 		work_completed(tsb1101->cgpu, work);
@@ -997,6 +978,7 @@ static bool abort_work(struct tsb1101_chain *tsb1101)
 	ret = cmd_RESET_BCAST(tsb1101, 0xed);
 
 	tsb1101->num_cores = 0;
+	tsb1101->perf = 0;
 	cmd_BIST_BCAST(tsb1101, 0);
 
 	for (i = 0; i < tsb1101->num_active_chips; i++)
@@ -1041,6 +1023,7 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	if (!set_pll_config(tsb1101, 0, tsb1101_config_options.pll, tsb1101_config_options.udiv))
 		goto failure;
 
+	cmd_RESET_BCAST(tsb1101, 0xed);
 	tsb1101->num_cores = 0;
 	tsb1101->perf = 0;
 	cmd_BIST_BCAST(tsb1101, 0);
@@ -1228,6 +1211,7 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 	/* check for completed works */
 	for (i = 0; i<2; i++) {
 		if(job_pin() == '1') break;
+//		cmd_CLEAR_OON(tsb1101, 0);
 
 		work_updated = true;
 
