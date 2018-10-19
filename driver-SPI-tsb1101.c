@@ -881,11 +881,12 @@ static int fd_gn_pin = 0;
 
 static int job_pin_state = 0;
 static int gn_pin_state = 0;
+// GPIOD29 = GPIO(32*3 +29) = GPIO125
 static uint8_t job_pin(void)
 {
 	uint32_t ret = 0;
 	if(fd_job_pin == 0) {
-		fd_job_pin = open("/sys/class/gpio/gpio40/value", O_RDONLY);
+		fd_job_pin = open("/sys/class/gpio/gpio125/value", O_RDONLY);
 		applog(LOG_DEBUG, "JOB_pin fd is opend (%d)", fd_job_pin);
 	}
 	lseek(fd_job_pin, 0, SEEK_SET);
@@ -901,7 +902,7 @@ static uint8_t gn_pin(void)
 {
 	uint32_t ret = 0;
 	if(fd_gn_pin == 0) {
-		fd_gn_pin = open("/sys/class/gpio/gpio34/value", O_RDONLY);
+		fd_gn_pin = open("/sys/class/gpio/gpio126/value", O_RDONLY);
 		applog(LOG_DEBUG, "GN_pin fd is opend (%d)", fd_gn_pin);
 	}
 	lseek(fd_gn_pin, 0, SEEK_SET);
@@ -1077,18 +1078,18 @@ void tsb1101_detect(bool hotplug)
 {
 	int fd_gpio;
 	fd_gpio = open("/sys/class/gpio/export", O_WRONLY);
-//	write(fd_gpio, "36", 3);	// reset
-	write(fd_gpio, "34", 3);	// oon
-	write(fd_gpio, "40", 3);	// gn
+//	write(fd_gpio, "127", 3);	// reset
+	write(fd_gpio, "125", 3);	// oon
+	write(fd_gpio, "126", 3);	// gn
 	close(fd_gpio);
 
-//	fd_gpio = open("/sys/class/gpio/gpio36/direction", O_WRONLY);
+//	fd_gpio = open("/sys/class/gpio/gpio127/direction", O_WRONLY);
 //	write(fd_gpio, "out", 4);	// reset
 //	close(fd_gpio);
-	fd_gpio = open("/sys/class/gpio/gpio34/direction", O_WRONLY);
+	fd_gpio = open("/sys/class/gpio/gpio125/direction", O_WRONLY);
 	write(fd_gpio, "in", 3);	// oon
 	close(fd_gpio);
-	fd_gpio = open("/sys/class/gpio/gpio40/direction", O_WRONLY);
+	fd_gpio = open("/sys/class/gpio/gpio126/direction", O_WRONLY);
 	write(fd_gpio, "in", 3);	// gn
 	close(fd_gpio);
 
