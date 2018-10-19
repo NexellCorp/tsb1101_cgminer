@@ -1122,7 +1122,7 @@ void tsb1101_detect(bool hotplug)
 
 	/* register global SPI context */
 	struct spi_config cfg = default_spi_config;
-	cfg.mode = SPI_MODE_3;
+	cfg.mode = SPI_MODE_0;
 	cfg.speed = tsb1101_config_options.spi_clk_khz * 1000;
 	cfg.bus = spi_idx;
 	spi[spi_idx] = spi_init(&cfg);
