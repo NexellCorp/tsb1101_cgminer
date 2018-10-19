@@ -520,7 +520,7 @@ fi
 
 
 #Add a new device to this list if it needs libusb, along with a no on the end.
-if test x$avalon$avalon2$avalon4$avalon7$avalon_miner$bitforce$bitfury$blockerupter$tsb1101$gekko$modminer$bflsc$icarus$hashfast$hashratio$klondike$drillbit$cointerra$ants1$ants3 != xnonononononononononononononononononono; then
+if test x$avalon$avalon2$avalon4$avalon7$avalon_miner$bitforce$bitfury$blockerupter$gekko$modminer$bflsc$icarus$hashfast$hashratio$klondike$drillbit$cointerra$ants1$ants3 != xnonononononononononononononononononono; then
 	want_usbutils=true
 else
 	want_usbutils=false
@@ -577,7 +577,10 @@ if test "x$djansson" != xno; then
 			AC_DEFINE(HAVE_JANSSON, 1, [Define if you have jansson >= 2.6])
 			;;
 		*)
-			PKG_CHECK_MODULES(JANSSON, jansson >= 2.6, [AC_DEFINE(HAVE_JANSSON, 1, [Define if you have jansson >= 2.6])], [AC_MSG_ERROR([Could not find jansson library - please install jansson >= 2.6])])
+#			PKG_CHECK_MODULES(JANSSON, jansson >= 2.6, [AC_DEFINE(HAVE_JANSSON, 1, [Define if you have jansson >= 2.6])], [djansson="no"])
+			JANSSON_LIBS="-ljansson"
+			JANSSON_CFLAGS=""
+			AC_DEFINE(HAVE_JANSSON, 1, [Define if you have jansson >= 2.6])
 			;;
 	esac
 else
