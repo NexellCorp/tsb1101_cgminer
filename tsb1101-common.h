@@ -83,9 +83,15 @@ struct tsb1101_chain {
 	bool disabled;
 	uint8_t temp[MAX_CHAIN_LENGTH];
 	int last_temp_time;
+	int pinnum_gpio_gn;
+	int pinnum_gpio_oon;
+	int fd_gpio_gn;
+	int fd_gpio_oon;
+	int volt_ch;
+	int volt;
 };
 
-#define MAX_SPI_PORT	3
+#define MAX_SPI_PORT	2
 struct tsb1101_board {
 	int board_id;
 	int num_chains;

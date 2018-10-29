@@ -24,6 +24,11 @@
 #include "tsb1101-common.h"
 
 static struct spi_ctx *spi[MAX_SPI_PORT];
+static int spi_available_bus[MAX_SPI_PORT] = {0, 2};
+static int plug_pin[MAX_SPI_PORT] = {24, 11};
+static int gn_pin[MAX_SPI_PORT] = {126, 131};
+static int oon_pin[MAX_SPI_PORT] = {125, 130};
+static int adc_ch[MAX_SPI_PORT] = {0, 1};
 static int spi_idx = 0;
 
 /********** work queue */
@@ -876,41 +881,20 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 	return retval;
 }
 
-static int fd_job_pin = 0;
-static int fd_gn_pin = 0;
-
-static int job_pin_state = 0;
-static int gn_pin_state = 0;
-// GPIOD29 = GPIO(32*3 +29) = GPIO125
-static uint8_t job_pin(void)
+static uint8_t get_pin(int pin)
 {
 	uint32_t ret = 0;
-	if(fd_job_pin == 0) {
-		fd_job_pin = open("/sys/class/gpio/gpio125/value", O_RDONLY);
-		applog(LOG_DEBUG, "JOB_pin fd is opend (%d)", fd_job_pin);
-	}
-	lseek(fd_job_pin, 0, SEEK_SET);
-	read(fd_job_pin, &ret, 1);
-	if(job_pin_state != ret) {
-		applog(LOG_DEBUG, "JOB_pin state is %c(0x%08x)", (uint8_t)ret, ret);
-		job_pin_state = ret;
-	}
-	return (uint8_t)ret;
-}
+	int fd;
+	char pinpath[64];
+	sprintf(pinpath, "/sys/class/gpio/gpio%d/value", pin);
+	fd = open(pinpath, O_RDONLY);
+	if(fd==0) return -1;
 
-static uint8_t gn_pin(void)
-{
-	uint32_t ret = 0;
-	if(fd_gn_pin == 0) {
-		fd_gn_pin = open("/sys/class/gpio/gpio126/value", O_RDONLY);
-		applog(LOG_DEBUG, "GN_pin fd is opend (%d)", fd_gn_pin);
-	}
-	lseek(fd_gn_pin, 0, SEEK_SET);
-	read(fd_gn_pin, &ret, 1);
-	if(gn_pin_state != ret) {
-		applog(LOG_DEBUG, "GN_pin state is %c(0x%08x)", (uint8_t)ret, ret);
-		gn_pin_state = ret;
-	}
+	lseek(fd, 0, SEEK_SET);
+	read(fd, &ret, 1);
+
+	close(fd);
+
 	return (uint8_t)ret;
 }
 
@@ -919,7 +903,7 @@ static bool get_nonce(struct tsb1101_chain *tsb1101, uint8_t *nonce,
 {
 	uint8_t *ret;
 
-	if(gn_pin() == '1') return false;
+	if(get_pin(tsb1101->pinnum_gpio_gn) != '0') return false;
 
 	do {
 		ret = cmd_READ_RESULT_BCAST(tsb1101);
@@ -1013,6 +997,12 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	tsb1101->spi_ctx = ctx;
 	tsb1101->chain_id = chain_id;
 
+	for(i=0; i<MAX_SPI_PORT; i++)
+		if(ctx->config.bus == spi_available_bus[i]) break;
+	tsb1101->pinnum_gpio_gn  =  gn_pin[i];
+	tsb1101->pinnum_gpio_oon = oon_pin[i];
+	tsb1101->volt_ch = adc_ch[i];
+
 	tsb1101->num_chips = chain_detect(tsb1101);
 	if (tsb1101->num_chips == 0)
 		goto failure;
@@ -1076,6 +1066,8 @@ static bool detect_single_chain(struct spi_ctx *ctx)
 /* Probe SPI channel and register chip chain */
 void tsb1101_detect(bool hotplug)
 {
+	int ii;
+#if 0
 	int fd_gpio;
 	fd_gpio = open("/sys/class/gpio/export", O_WRONLY);
 //	write(fd_gpio, "127", 3);	// reset
@@ -1092,12 +1084,11 @@ void tsb1101_detect(bool hotplug)
 	fd_gpio = open("/sys/class/gpio/gpio126/direction", O_WRONLY);
 	write(fd_gpio, "in", 3);	// gn
 	close(fd_gpio);
+#endif
 
 	/* no hotplug support for SPI */
 	if (hotplug)
 		return;
-
-	if(spi_idx>=MAX_SPI_PORT) return;
 
 	/* parse tsb1101-options */
 	if (opt_tsb1101_options != NULL && parsed_config_options == NULL) {
@@ -1123,21 +1114,42 @@ void tsb1101_detect(bool hotplug)
 
 	/* register global SPI context */
 	struct spi_config cfg = default_spi_config;
-	cfg.mode = SPI_MODE_0;
-	cfg.speed = tsb1101_config_options.spi_clk_khz * 1000;
-	cfg.bus = spi_idx;
-	spi[spi_idx] = spi_init(&cfg);
-	if (spi[spi_idx] == NULL)
-		return;
+	for(ii=0; ii<MAX_SPI_PORT; ii++) {
+//		if(get_pin(plug_pin[ii]) != '1') continue;
+		cfg.mode = SPI_MODE_0;
+		cfg.speed = tsb1101_config_options.spi_clk_khz * 1000;
+		cfg.bus = spi_available_bus[ii];
+		spi[ii] = spi_init(&cfg);
+		if (spi[ii] == NULL)
+			return;
 
-	if (detect_single_chain(spi[spi_idx])) {
-		spi_idx++;
-		return;
+		if (detect_single_chain(spi[ii]) == false)
+			/* release SPI context if no TSB1101 products found */
+			spi_exit(spi[ii]);
 	}
-	/* release SPI context if no TSB1101 products found */
-	spi_exit(spi[spi_idx]);
 }
 
+int get_volt(int ch)
+{
+#if 0
+	int ret = -1;
+	int fd, val;
+	char adcpath[64];
+
+	sprintf(adcpath, "/sys/bus/iio/devices/iio\:device0/in_voltage%d_raw", ch);
+	fd = open(adcpath, O_RDONLY);
+
+	ret = read(fd, &val, 4);
+
+	if(val
+
+	close(fd);
+
+	return ret;
+#else
+	return 18000;
+#endif
+}
 #define TEMP_UPDATE_INT_MS	2000
 static int64_t tsb1101_scanwork(struct thr_info *thr)
 {
@@ -1167,6 +1179,8 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 			tsb1101->temp[i-1] = cmd_READ_TEMP(tsb1101, i);
 		}
 		tsb1101->last_temp_time = get_current_ms();
+
+		tsb1101->volt = get_volt(tsb1101->volt_ch);
 	}
 	int cid = tsb1101->chain_id;
 	/* poll queued results */
@@ -1211,7 +1225,7 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 	/* check for completed works */
 	for (i = 0; i<2; i++) {
-		if(job_pin() == '1') break;
+		if(get_pin(tsb1101->pinnum_gpio_oon) == '1') break;
 //		cmd_CLEAR_OON(tsb1101, 0);
 
 		work_updated = true;
