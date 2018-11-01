@@ -8766,6 +8766,12 @@ static void *watchpool_thread(void __maybe_unused *userdata)
 #define WATCHDOG_SICK_COUNT		(WATCHDOG_SICK_TIME/WATCHDOG_INTERVAL)
 #define WATCHDOG_DEAD_COUNT		(WATCHDOG_DEAD_TIME/WATCHDOG_INTERVAL)
 
+#define	LED_OFF		0
+#define	LED_BLINK	1
+#define	LED_ON		2
+
+int led_green = -1;
+int led_red = -1;
 static void *watchdog_thread(void __maybe_unused *userdata)
 {
 	const unsigned int interval = WATCHDOG_INTERVAL;
@@ -8797,6 +8803,53 @@ static void *watchdog_thread(void __maybe_unused *userdata)
 	while (1) {
 		int i;
 		struct timeval now;
+
+		int led_green_t = 0, led_red_t = 0, ii, jj;
+		led_green_t = LED_ON;
+		led_red_t = LED_OFF;
+		for (ii = 0; ii < total_devices; ++ii) {
+			int jj;
+			struct cgpu_info *cgpu = get_devices(ii);
+			applog(LOG_DEBUG, "dev%d: deven:%d", ii, cgpu->deven);
+			if (cgpu->deven != DEV_DISABLED) {
+				led_green_t = LED_BLINK;
+			}
+			applog(LOG_DEBUG, "dev%d: hot_temp:%d, cutofftemp:%d", ii, cgpu->hot_temp, cgpu->cutofftemp);
+			if (cgpu->hot_temp > cgpu->cutofftemp) {
+				applog(LOG_DEBUG, "RED BLINKING");
+				led_red_t = LED_BLINK;
+			}
+		}
+		if(led_green_t != led_green) {
+			if(led_green_t == LED_ON) {
+				system("echo 0 > /sys/class/leds/green/delay_on");
+				system("echo 500 > /sys/class/leds/green/delay_off");
+			}
+			else if(led_green_t == LED_BLINK) {
+				system("echo 200 > /sys/class/leds/green/delay_on");
+				system("echo 200 > /sys/class/leds/green/delay_off");
+			}
+			else { /* it must not be off */
+				system("echo 50 > /sys/class/leds/green/delay_off");
+				system("echo 50 > /sys/class/leds/green/delay_on");
+			}
+			led_green = led_green_t;
+		}
+		if(led_red_t != led_red) {
+			if(led_red_t == LED_ON) {
+				system("echo 0 > /sys/class/leds/red/delay_on");
+				system("echo 500 > /sys/class/leds/red/delay_off");
+			}
+			else if(led_red_t == LED_BLINK) {
+				system("echo 200 > /sys/class/leds/red/delay_on");
+				system("echo 200 > /sys/class/leds/red/delay_off");
+			}
+			else {
+				system("echo 0 > /sys/class/leds/red/delay_off");
+				system("echo 500 > /sys/class/leds/red/delay_on");
+			}
+			led_red = led_red_t;
+		}
 
 		sleep(interval);
 
@@ -8902,6 +8955,7 @@ static void *watchdog_thread(void __maybe_unused *userdata)
 			/* Thread is waiting on getwork or disabled */
 			if (thr->getwork || *denable == DEV_DISABLED || thr->pause)
 				continue;
+
 
 			if (cgpu->status != LIFE_WELL && (now.tv_sec - thr->last.tv_sec < WATCHDOG_SICK_TIME)) {
 				if (cgpu->status != LIFE_INIT)

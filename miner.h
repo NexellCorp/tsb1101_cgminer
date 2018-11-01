@@ -502,6 +502,8 @@ struct cgpu_info {
 
 	double temp;
 	int cutofftemp;
+	int hot_temp;
+	int hot_id;
 
 	int64_t diff1;
 	double diff_accepted;

@@ -81,7 +81,9 @@ struct tsb1101_chain {
 
 	/* mark chain disabled, do not try to re-enable it */
 	bool disabled;
-	uint8_t temp[MAX_CHAIN_LENGTH];
+	int temp[MAX_CHAIN_LENGTH];
+	int high_temp_val;
+	int high_temp_id;
 	int last_temp_time;
 	int pinnum_gpio_gn;
 	int pinnum_gpio_oon;

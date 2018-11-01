@@ -115,7 +115,12 @@ static struct tsb1101_config_options *parsed_config_options;
 static void flush_spi(struct tsb1101_chain *tsb1101)
 {
 	memset(tsb1101->spi_tx, 0, 64);
-	spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 64);
+	bool ret;
+	ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 64);
+	if(ret == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
 }
 
 /********** upper layer SPI functions */
@@ -125,6 +130,7 @@ static uint8_t *exec_cmd(struct tsb1101_chain *tsb1101,
 			  uint8_t resp_len)
 {
 	int tx_len = ALIGN((2 + len + resp_len), 4), ii;
+	bool ret;
 	memset(tsb1101->spi_tx, 0, tx_len);
 	tsb1101->spi_tx[0] = cmd;
 	tsb1101->spi_tx[1] = chip_id;
@@ -132,7 +138,11 @@ static uint8_t *exec_cmd(struct tsb1101_chain *tsb1101,
 	if (data != NULL)
 		memcpy(tsb1101->spi_tx + 2, data, len);
 
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	if(ret == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
 
 //	if((tsb1101->spi_tx[0] != SPI_CMD_READ_ID) ||
 //		(tsb1101->spi_rx[4] != 3)) {
@@ -309,11 +319,12 @@ static uint8_t *cmd_RESET_BCAST(struct tsb1101_chain *tsb1101, uint8_t strategy)
 static uint8_t *cmd_READ_RESULT_BCAST(struct tsb1101_chain *tsb1101)
 {
 	int tx_len = 6+2;
+	bool ret;
 	memset(tsb1101->spi_tx, 0, tx_len);
 	tsb1101->spi_tx[0] = SPI_CMD_READ_JOB_ID;
 
 	int ii;
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
 //	if((tsb1101->spi_rx[2] != 0xff) &&
 //		(tsb1101->spi_rx[3] != 0xff) &&
 //		(tsb1101->spi_rx[4] != 0xff) &&
@@ -323,6 +334,10 @@ static uint8_t *cmd_READ_RESULT_BCAST(struct tsb1101_chain *tsb1101)
 		hexdump("send: TX", tsb1101->spi_tx, tx_len);
 		hexdump("send: RX", tsb1101->spi_rx, tx_len);
 //	}
+	if(ret == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
 
 	uint8_t *scan = tsb1101->spi_rx;
 	scan+=2;
@@ -337,11 +352,17 @@ static uint8_t *cmd_READ_RESULT_BCAST(struct tsb1101_chain *tsb1101)
 static uint8_t *cmd_READ_RESULT(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
 	int tx_len = ALIGN(6, 4);
+	bool ret;
 	memset(tsb1101->spi_tx, 0, tx_len);
 	tsb1101->spi_tx[0] = SPI_CMD_READ_RESULT;
 	tsb1101->spi_tx[1] = chip_id;
 
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	if(ret == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
+
 	hexdump("send: TX", tsb1101->spi_tx, tx_len);
 	hexdump("send: RX", tsb1101->spi_rx, tx_len);
 	tsb1101->spi_rx[2] ^= 0xff;
@@ -355,13 +376,18 @@ static uint8_t *cmd_READ_RESULT(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 static uint8_t *cmd_CLEAR_OON(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
 	int tx_len = ALIGN(4, 4);
+	bool ret;
 	memset(tsb1101->spi_tx, 0, tx_len);
 	tsb1101->spi_tx[0] = SPI_CMD_CLEAR_OON;
 	tsb1101->spi_tx[1] = chip_id;
 
-	assert(spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	assert(ret = spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
 	hexdump("send: TX", tsb1101->spi_tx, tx_len);
 	hexdump("send: RX", tsb1101->spi_rx, tx_len);
+	if(ret == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
 
 	return &(tsb1101->spi_rx[2]);
 }
@@ -369,13 +395,18 @@ static uint8_t *cmd_CLEAR_OON(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 static uint8_t *cmd_READ_HASH(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
 	int tx_len = ALIGN(2+32, 4), ii;
+	bool ret;
 	memset(tsb1101->spi_tx, 0, tx_len);
 	tsb1101->spi_tx[0] = SPI_CMD_READ_HASH;
 	tsb1101->spi_tx[1] = chip_id;
 
-	assert(spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
+	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
 	hexdump("send: TX", tsb1101->spi_tx, tx_len);
 	hexdump("send: RX", tsb1101->spi_rx, tx_len);
+	if(ret == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
 
 	for(ii=2; ii<(32+2); ii++)
 		tsb1101->spi_rx[ii] ^= 0xff;
@@ -416,6 +447,7 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 			      uint8_t job_id, uint8_t *job, struct work *work)
 {
 	int ii=0, spi_len0, spi_len1, spi_len2, ret = 0;
+	bool retb;
 	/* ensure we push the SPI command to the last chip in chain */
 	uint8_t *spi_tx = job;
 	struct spi_ioc_transfer *xfr = tsb1101->xfr;
@@ -510,7 +542,11 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 
 	ii += 1;
 
-	assert(spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
+	assert(retb = spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
+	if(retb == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
 
 	return true;
 }
@@ -641,6 +677,7 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 	uint8_t *spi_tx = tsb1101->spi_tx;
 	uint32_t *start_nonce_ptr;
 	uint32_t *  end_nonce_ptr;
+	bool ret;
 
 	tsb1101->chips[0].start_nonce = 0;
 	for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
@@ -650,6 +687,7 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 	}
 	tsb1101->chips[tsb1101->num_active_chips-1].end_nonce = 0xffffffff;
 
+	tsb1101->disabled = false;
 	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
 		applog(LOG_DEBUG, "chip %2d : %08X ~ %08X", ii+1, tsb1101->chips[ii].start_nonce, tsb1101->chips[ii].end_nonce);
 
@@ -662,9 +700,13 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 		spi_tx[1] = ii+1;
 		spi_tx[10] = 0;
 
-		spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 12);
+		ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 12);
 		hexdump("send: TX", tsb1101->spi_tx, 12);
 		hexdump("send: RX", tsb1101->spi_rx, 12);
+		if(ret == false) {
+			tsb1101->disabled = true;
+			break;
+		}
 	}
 
 	return true;
@@ -753,8 +795,8 @@ static bool is_chip_disabled(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 static void disable_chip(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
 	// TODO
-	flush_spi(tsb1101);
-#if 0
+//	flush_spi(tsb1101);
+#if 1
 	struct tsb1101_chip *chip = &tsb1101->chips[chip_id];
 	int cid = tsb1101->chain_id;
 	if (is_chip_disabled(tsb1101, chip_id)) {
@@ -773,7 +815,7 @@ void check_disabled_chips(struct tsb1101_chain *tsb1101)
 	int i;
 	int cid = tsb1101->chain_id;
 	for (i = 0; i < tsb1101->num_active_chips; i++) {
-#if 0
+#if 1
 		int chip_id = i + 1;
 		struct tsb1101_chip *chip = &tsb1101->chips[i];
 		if (!is_chip_disabled(tsb1101, chip_id))
@@ -1150,6 +1192,7 @@ int get_volt(int ch)
 	return 18000;
 #endif
 }
+
 #define TEMP_UPDATE_INT_MS	2000
 static int64_t tsb1101_scanwork(struct thr_info *thr)
 {
@@ -1160,6 +1203,12 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 	if (tsb1101->num_cores == 0) {
 		cgpu->deven = DEV_DISABLED;
+		chain_detect(tsb1101);
+		return 0;
+	}
+	if (tsb1101->disabled) {
+		cgpu->deven = DEV_DISABLED;
+		chain_detect(tsb1101);
 		return 0;
 	}
 //	board_selector->select(tsb1101->chain_id);
@@ -1174,10 +1223,19 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 	mutex_lock(&tsb1101->lock);
 
 	if (tsb1101->last_temp_time + TEMP_UPDATE_INT_MS < get_current_ms()) {
+		tsb1101->high_temp_val = 0;
+		tsb1101->high_temp_id = -1;
 //		tsb1101->temp = board_selector->get_temp(0);
 		for (i = tsb1101->num_active_chips; i > 0; i--) {
 			tsb1101->temp[i-1] = cmd_READ_TEMP(tsb1101, i);
+			if(tsb1101->temp[i-1] > tsb1101->high_temp_val) {
+				tsb1101->high_temp_val = tsb1101->temp[i-1];
+				tsb1101->high_temp_id = i;
+			}
 		}
+		cgpu->hot_temp = tsb1101->high_temp_val;
+		cgpu->hot_id   = tsb1101->high_temp_id ;
+
 		tsb1101->last_temp_time = get_current_ms();
 
 		tsb1101->volt = get_volt(tsb1101->volt_ch);
