@@ -284,6 +284,9 @@ char *opt_drillbit_auto = NULL;
 char *opt_bab_options = NULL;
 #ifdef USE_TSB1101
 char *opt_tsb1101_options = NULL;
+char *opt_tsb1101_min_cores = NULL;
+char *opt_tsb1101_min_chips = NULL;
+char *opt_tsb1101_chiptest = NULL;
 #endif
 #ifdef USE_BITMINE_A1
 char *opt_bitmine_a1_options = NULL;
@@ -1604,6 +1607,15 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--tsb1101-options",
 		     opt_set_charp, NULL, &opt_tsb1101_options,
 		     "TSB1101 options spi_clk_khz:sys_clk_mhz:uart_divider"),
+	OPT_WITH_ARG("--tsb1101-min-cores",
+		     opt_set_charp, NULL, &opt_tsb1101_min_cores,
+		     "TSB1101 options minimum cores"),
+	OPT_WITH_ARG("--tsb1101-min-chips",
+		     opt_set_charp, NULL, &opt_tsb1101_min_chips,
+		     "TSB1101 options minimum cores"),
+	OPT_WITH_ARG("--tsb1101-chiptest",
+		     opt_set_charp, NULL, &opt_tsb1101_chiptest,
+		     "TSB1101 options flag of chip test"),
 #endif
 #ifdef USE_BITMINE_A1
 	OPT_WITH_ARG("--bitmine-a1-options",
