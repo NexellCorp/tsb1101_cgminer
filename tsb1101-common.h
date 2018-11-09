@@ -83,6 +83,7 @@ struct tsb1101_chain {
 	bool disabled;
 	int temp[MAX_CHAIN_LENGTH];
 	int high_temp_val;
+	float high_temp_val_f;
 	int high_temp_id;
 	int last_temp_time;
 	int pinnum_gpio_gn;
@@ -92,6 +93,7 @@ struct tsb1101_chain {
 	int fd_gpio_oon;
 	int volt_ch;
 	int mvolt;
+	float volt_f;
 };
 
 #define MAX_SPI_PORT	2
