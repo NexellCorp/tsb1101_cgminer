@@ -1379,11 +1379,11 @@ failure:
 	return NULL;
 }
 
-static bool detect_single_chain(struct spi_ctx *ctx)
+static bool detect_single_chain(struct spi_ctx *ctx, int idx)
 {
 //	board_selector = (struct board_selector*)&dummy_board_selector;
 	applog(LOG_WARNING, "TSB1101: checking single chain");
-	struct tsb1101_chain *tsb1101 = init_tsb1101_chain(ctx, 0);
+	struct tsb1101_chain *tsb1101 = init_tsb1101_chain(ctx, idx);
 	if (tsb1101 == NULL)
 		return false;
 
@@ -1479,7 +1479,7 @@ void tsb1101_detect(bool hotplug)
 		if (spi[ii] == NULL)
 			return;
 
-		if (detect_single_chain(spi[ii]) == false)
+		if (detect_single_chain(spi[ii], ii) == false)
 			/* release SPI context if no TSB1101 products found */
 			spi_exit(spi[ii]);
 	}
@@ -1694,6 +1694,28 @@ static void tsb1101_get_statline_before(char *buf, size_t len,
 		    tsb1101->temp[0] == 0 ? "   " : temp);
 }
 
+static struct api_data *tsb1101_api_stats(struct cgpu_info *cgpu)
+{
+       struct api_data *root = NULL;
+       struct tsb1101_chain *tsb1101 = cgpu->device_data;
+
+       root = api_add_int(root, "chain_id", &(tsb1101->chain_id), false);
+
+       root = api_add_int(root, "asic_count", &(tsb1101->num_chips), false);
+
+       tsb1101->volt_f = (float)tsb1101->mvolt/1000.0;
+       root = api_add_volts(root, "volt", &(tsb1101->volt_f), false);
+
+       tsb1101->high_temp_val_f = (float)tsb1101->high_temp_val;
+       root = api_add_temp(root, "hi_temp", &(tsb1101->high_temp_val_f), false);
+
+       root = api_add_int(root, "hot_chip", &(tsb1101->high_temp_id), false);
+
+       root = api_add_int(root, "chain_id_end", &(tsb1101->chain_id), false);
+
+       return root;
+}
+
 struct device_drv tsb1101_drv = {
 	.drv_id = DRIVER_tsb1101,
 	.dname = "TSB1101",
@@ -1704,5 +1726,6 @@ struct device_drv tsb1101_drv = {
 	.scanwork = tsb1101_scanwork,
 	.queue_full = tsb1101_queue_full,
 	.flush_work = tsb1101_flush_work,
+	.get_api_stats = tsb1101_api_stats,
 	.get_statline_before = tsb1101_get_statline_before,
 };
