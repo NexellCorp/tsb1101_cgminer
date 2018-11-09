@@ -57,7 +57,7 @@ struct tsb1101_chip {
 	bool disabled;
 };
 
-#define	MAX_CHIP_NUM	128
+#define	MAX_CHIP_NUM	66
 struct tsb1101_chain {
 	int chain_id;
 	struct cgpu_info *cgpu;
@@ -87,10 +87,11 @@ struct tsb1101_chain {
 	int last_temp_time;
 	int pinnum_gpio_gn;
 	int pinnum_gpio_oon;
+	int pinnum_gpio_vctrl;
 	int fd_gpio_gn;
 	int fd_gpio_oon;
 	int volt_ch;
-	int volt;
+	int mvolt;
 };
 
 #define MAX_SPI_PORT	2
@@ -100,6 +101,11 @@ struct tsb1101_board {
 	struct tsb1101_chain *chain[MAX_SPI_PORT];
 };
 
+#define	MAX_CORES_PER_CHIP	206
+#define DEFAULT_MIN_CORES	(MAX_CORES_PER_CHIP*0.9)
+
+#define	DEFAULT_MIN_CHIPS	(MAX_CHIP_NUM*0.9)
+
 /********** config paramters */
 struct tsb1101_config_options {
 	int spi_clk_khz;
@@ -107,6 +113,9 @@ struct tsb1101_config_options {
 	int udiv;
 	/* limit chip chain to this number of chips (testing only) */
 	int override_chip_num;
+	int min_cores;
+	int min_chips;
+	int test_mode;
 };
 
 /* global configuration instance */

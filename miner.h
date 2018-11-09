@@ -1038,6 +1038,9 @@ extern char *opt_bab_options;
 #endif
 #ifdef USE_TSB1101
 extern char *opt_tsb1101_options;
+extern char *opt_tsb1101_min_cores;
+extern char *opt_tsb1101_min_chips;
+extern char *opt_tsb1101_chiptest;
 #endif
 #ifdef USE_BITMINE_A1
 extern char *opt_bitmine_a1_options;

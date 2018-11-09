@@ -25,6 +25,7 @@
 
 static struct spi_ctx *spi[MAX_SPI_PORT];
 static int spi_available_bus[MAX_SPI_PORT] = {0, 2};
+static int vctrl_pin[MAX_SPI_PORT] = {20, 9};
 static int plug_pin[MAX_SPI_PORT] = {24, 11};
 static int gn_pin[MAX_SPI_PORT] = {126, 131};
 static int oon_pin[MAX_SPI_PORT] = {125, 130};
@@ -105,11 +106,80 @@ enum TSB1101_command {
  * - 2000 kHz SPI clock
  */
 struct tsb1101_config_options tsb1101_config_options = {
-	.pll = 16000, .udiv = (16+1), .spi_clk_khz = 500,
+	.pll = 16000, .udiv = (16+1), .spi_clk_khz = 500, .min_cores = DEFAULT_MIN_CORES, .min_chips = DEFAULT_MIN_CHIPS,
 };
 
 /* override values with --bitmine-tsb1101-options ref:sys:spi: - use 0 for default */
 static struct tsb1101_config_options *parsed_config_options;
+
+static uint8_t get_pin(int pin)
+{
+	uint32_t ret = 0;
+	int fd;
+	char pinpath[64];
+	sprintf(pinpath, "/sys/class/gpio/gpio%d/value", pin);
+	fd = open(pinpath, O_RDONLY);
+	if(fd==0) return -1;
+
+	lseek(fd, 0, SEEK_SET);
+	read(fd, &ret, 1);
+
+	close(fd);
+
+	return (uint8_t)ret;
+}
+
+static uint8_t set_pin(int pin, int val)
+{
+	uint32_t ret = 0;
+	int fd;
+	char pinpath[64];
+	sprintf(pinpath, "/sys/class/gpio/gpio%d/value", pin);
+	fd = open(pinpath, O_WRONLY);
+	if(fd==0) return -1;
+
+	if(val==0) ret = '0';
+	else ret = '1';
+	lseek(fd, 0, SEEK_SET);
+	write(fd, &ret, 1);
+
+	close(fd);
+
+	return (uint8_t)ret;
+}
+
+/* 0x000 : 0V
+ * 0xFFF : 1.8V
+ * (1.8/4096)xADC = voltage
+ *
+ * the result must be 0.5V
+ * 1.8*adc/4096 = 0.5
+ * adc = 0.5*(4096/1.8) ~= 1138
+ * min = 0.4*(4096/1.8) ~= 910
+ * max = 0.6*(4096/1.8) ~= 1365
+ */
+#define ad2mV(adc)  ((adc*1800)/4096)
+
+#define HASH_ADC_MIN    910
+#define HASH_ADC_MAX    1365
+
+static int get_mvolt(int ch)
+{
+	int ret = -1;
+	int fd, val = 0;
+	char adcpath[64];
+
+	sprintf(adcpath, "/sys/bus/iio/devices/iio\\:device0/in_voltage%d_raw", ch);
+	fd = open(adcpath, O_RDONLY);
+
+	ret = read(fd, &val, 4);
+
+	ret = ad2mV(val);
+
+	close(fd);
+
+	return ret;
+}
 
 /********** temporary helper for hexdumping SPI traffic */
 static void flush_spi(struct tsb1101_chain *tsb1101)
@@ -443,6 +513,102 @@ static uint32_t nbits_from_target(unsigned char *target)
 	return ret;
 }
 
+static uint8_t cmd_WRITE_JOB_test(struct tsb1101_chain *tsb1101, uint8_t job_id, uint8_t *job, uint8_t chip_id)
+{
+	int ii=0, spi_len0, spi_len1, spi_len2, ret = 0;
+	bool retb;
+	/* ensure we push the SPI command to the last chip in chain */
+	uint8_t *spi_tx = job;
+	struct spi_ioc_transfer *xfr = tsb1101->xfr;
+
+	int tx_len;
+
+	tx_len = ALIGN((WRITE_JOB_LENGTH + 2), 4);
+	// WRITE_PARM
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[0].tx_buf = (unsigned long)spi_tx;
+	xfr[0].rx_buf = (unsigned long)NULL;
+	xfr[0].len = tx_len;
+	xfr[0].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[0].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[0].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[0].tx_nbits = 0;
+	xfr[0].rx_nbits = 0;
+	xfr[0].pad = 0;
+	spi_tx += tx_len;
+
+	// CLEAR_OON
+	tx_len = 4;
+
+	spi_tx[0] = SPI_CMD_CLEAR_OON;
+	spi_tx[1] = 0;
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[1].tx_buf = (unsigned long)spi_tx;
+	xfr[1].rx_buf = (unsigned long)NULL;
+	xfr[1].len = tx_len;
+	xfr[1].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[1].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[1].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[1].tx_nbits = 0;
+	xfr[1].rx_nbits = 0;
+	xfr[1].pad = 0;
+	spi_tx += tx_len; 
+
+	ii = 2;
+
+	// WRITE_TARGET
+	tx_len = 9;
+	spi_tx[0] = SPI_CMD_WRITE_TARGET;
+	spi_tx[1] = 0;
+	spi_tx[2] = 0x19;
+	spi_tx[3] = 0;
+	spi_tx[4] = 0x89;
+	spi_tx[5] = 0x6c;
+	spi_tx[6] = 0x05;
+	spi_tx[7] = 0x10;
+	spi_tx[8] = 0;
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[ii].tx_buf = (unsigned long)spi_tx;
+	xfr[ii].rx_buf = (unsigned long)NULL;
+	xfr[ii].len = tx_len;
+	xfr[ii].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[ii].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[ii].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[ii].tx_nbits = 0;
+	xfr[ii].rx_nbits = 0;
+	xfr[ii].pad = 0;
+
+	ii += 1;
+	spi_tx += tx_len;
+
+	// RUN_JOB
+	tx_len = 5;
+	spi_tx[0] = SPI_CMD_RUN_JOB;
+	spi_tx[1] = chip_id;
+	spi_tx[2] = 0;
+	spi_tx[3] = job_id;
+	hexdump("send: TX", spi_tx, tx_len);
+	xfr[ii].tx_buf = (unsigned long)spi_tx;
+	xfr[ii].rx_buf = (unsigned long)NULL;
+	xfr[ii].len = tx_len;
+	xfr[ii].speed_hz = tsb1101->spi_ctx->config.speed*20;
+	xfr[ii].delay_usecs = tsb1101->spi_ctx->config.delay;
+	xfr[ii].bits_per_word = tsb1101->spi_ctx->config.bits;
+	xfr[ii].tx_nbits = 0;
+	xfr[ii].rx_nbits = 0;
+	xfr[ii].pad = 0;
+
+	ii += 1;
+
+	assert(retb = spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
+	if(retb == false)
+		tsb1101->disabled = true;
+	else
+		tsb1101->disabled = false;
+
+	return true;
+}
+
 static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 			      uint8_t job_id, uint8_t *job, struct work *work)
 {
@@ -660,6 +826,14 @@ static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id)
 	}
 
 	tsb1101->chips[chip_id-1].num_cores = ret[1];
+	if(((tsb1101->chips[0].rev>>16)&0xf) != 0x0) {
+		if(tsb1101->chips[chip_id-1].num_cores < tsb1101_config_options.min_cores) {
+			applog(LOG_ERR, "%d: chip %d has not enough cores(%d), it must be over than %d", cid, chip_id, tsb1101->chips[chip_id-1].num_cores, tsb1101_config_options.min_cores);
+			tsb1101->chips[chip_id-1].num_cores = 0;
+			tsb1101->chips[chip_id-1].perf = 0;
+			return false;
+		}
+	}
 	applog(LOG_WARNING, "%d: Found chip %d with %d active cores",
 	       cid, chip_id, tsb1101->chips[chip_id-1].num_cores);
 
@@ -679,13 +853,21 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 	uint32_t *  end_nonce_ptr;
 	bool ret;
 
-	tsb1101->chips[0].start_nonce = 0;
-	for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
-		tsb1101->chips[ii].end_nonce = tsb1101->chips[ii].start_nonce
-			+ ((0xffffffff*tsb1101->chips[ii].perf)/tsb1101->perf);
-		tsb1101->chips[ii+1].start_nonce = tsb1101->chips[ii].end_nonce+1;
+	if(tsb1101_config_options.test_mode == 1) {
+		for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
+			tsb1101->chips[ii].start_nonce = 0;
+			tsb1101->chips[ii].end_nonce = 0xffffffff;
+		}
 	}
-	tsb1101->chips[tsb1101->num_active_chips-1].end_nonce = 0xffffffff;
+	else {
+		tsb1101->chips[0].start_nonce = 0;
+		for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
+			tsb1101->chips[ii].end_nonce = tsb1101->chips[ii].start_nonce
+				+ ((0xffffffff*tsb1101->chips[ii].perf)/tsb1101->perf);
+			tsb1101->chips[ii+1].start_nonce = tsb1101->chips[ii].end_nonce+1;
+		}
+		tsb1101->chips[tsb1101->num_active_chips-1].end_nonce = 0xffffffff;
+	}
 
 	tsb1101->disabled = false;
 	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
@@ -923,21 +1105,31 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 	return retval;
 }
 
-static uint8_t get_pin(int pin)
+static bool set_work_test(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
-	uint32_t ret = 0;
-	int fd;
-	char pinpath[64];
-	sprintf(pinpath, "/sys/class/gpio/gpio%d/value", pin);
-	fd = open(pinpath, O_RDONLY);
-	if(fd==0) return -1;
+	int cid = tsb1101->chain_id;
+	struct tsb1101_chip *chip;
+	bool retval = false;
+	int job_id;
+	struct work work;
 
-	lseek(fd, 0, SEEK_SET);
-	read(fd, &ret, 1);
+	uint8_t jobdata[] = {
+		0x07, 0x00, 0x4F, 0x40, 0x63, 0xF5, 0x49, 0x63, 
+		0x8D, 0x39, 0x6D, 0x6E, 0x8E, 0x43, 0xF6, 0x3F, 
+		0x8B, 0xA2, 0x65, 0xB0, 0xBA, 0xA4, 0xE3, 0xAF, 
+		0xC3, 0x50, 0x29, 0x36, 0x5A, 0x98, 0x4C, 0xF6, 
+		0x9E, 0xB7, 0x91, 0x5C, 0x88, 0x7A, 0x53, 0x6D, 
+		0xC8, 0x02, 0x19, 0x00, 0x89, 0x6C, 0x00, 0x00};
 
-	close(fd);
+	chip = &tsb1101->chips[chip_id];
+	job_id = 1;
 
-	return (uint8_t)ret;
+	if (!cmd_WRITE_JOB_test(tsb1101, job_id, jobdata, chip_id)) {
+		retval = false;
+	} else {
+		retval = true;
+	}
+	return retval;
 }
 
 static bool get_nonce(struct tsb1101_chain *tsb1101, uint8_t *nonce,
@@ -1028,6 +1220,101 @@ void exit_tsb1101_chain(struct tsb1101_chain *tsb1101)
 	free(tsb1101);
 }
 
+#define DEFAULT_TEST_TIMEOUT 4
+#define DEFAULT_TEST_NONCE	0xa4a03c7b
+static uint32_t work_nonce = DEFAULT_TEST_NONCE;
+static int mvolt_array[2] = {400, 420};
+static int hashboard_test(struct tsb1101_chain *tsb1101)
+{
+	int res = 0, i;
+	int mvolt_idx = 0;
+	applog(LOG_ERR, "----------------------------------------------------------------------");
+	applog(LOG_ERR, "----------------------- hash board test mode!! -----------------------");
+	applog(LOG_ERR, "----------------------------------------------------------------------");
+	for(mvolt_idx = 0; mvolt_idx < 2; mvolt_idx++) {
+		set_pin(tsb1101->pinnum_gpio_vctrl, mvolt_idx);
+		cgsleep_us(500000);
+		res = get_mvolt(mvolt_idx);
+		if( 
+				(res < (mvolt_array[mvolt_idx]-40)) || 
+				(res > (mvolt_array[mvolt_idx]+40)) ) {
+			applog(LOG_ERR, "power error (%dmV detected, it must be %dmV)", res, mvolt_array[mvolt_idx]);
+			continue;
+		}
+		applog(LOG_ERR, "-- test chip at %d mV --", mvolt_array[mvolt_idx]);
+		for (i = 0; i < tsb1101->num_active_chips; i++) {
+			int ii;
+			uint8_t *ret;
+			uint32_t *ret32;
+			ii = set_work_test(tsb1101, i+1);
+			if(ii == false) {
+				applog(LOG_ERR, "\tchip %d FAIL!!(in the write job)", i);
+				res = -1;
+				continue;
+			}
+
+			for(ii=0; ii<DEFAULT_TEST_TIMEOUT; ii++) {
+				if(get_pin(tsb1101->pinnum_gpio_oon) == '0') break;
+				sleep(1);
+			}
+
+			if(get_pin(tsb1101->pinnum_gpio_oon) != '0') {
+				applog(LOG_ERR, "\t\tchip %d FAIL!!(not oon)", i);
+				res = -1;
+				continue;
+			}
+			if(get_pin(tsb1101->pinnum_gpio_gn) != '0') {
+				applog(LOG_ERR, "\t\t\tchip %d FAIL!!(not gn)", i);
+				continue;
+			}
+			ret = cmd_READ_RESULT_BCAST(tsb1101);
+			if (ret == NULL) {
+				applog(LOG_ERR, "\t\t\t\tchip %d FAIL!!(spi error)", i);
+				res = -1;
+				continue;
+			}
+
+			// oon check
+			if ((ret[2]&(1<<1)) == 0) {
+				applog(LOG_ERR, "\t\t\t\t\tchip %d FAIL!!(oon pin, but not in register)", i);
+				res = -1;
+				continue;
+			}
+			// golden nonce
+			if ((ret[2]&(1<<0)) == 0) {
+				applog(LOG_ERR, "\t\t\t\t\t\tchip %d FAIL!!(gn pin, but not in register)", i);
+				res = -1;
+				continue;
+			}
+
+			if (ret[3] != i) {
+				applog(LOG_ERR, "\t\t\t\t\t\t\tchip %d FAIL!!(chip id(%d) in register)", i, ret[3]);
+				res = -1;
+				continue;
+			}
+			if (ret[1] != 1) {
+				applog(LOG_ERR, "\t\t\t\t\t\t\t\tchip %d FAIL!!(job id(%d) in register)", i, ret[1]);
+				res = -1;
+				continue;
+			}
+
+			ret = cmd_READ_RESULT(tsb1101, i);
+			ret32 = (uint32_t *)ret;
+			*ret32 = bswap_32(*ret32);
+			*ret32 -= (tsb1101->chips[i-1].hash_depth*tsb1101->chips[i-1].num_cores);
+
+			*ret32 = bswap_32(*ret32);
+			if(*ret32 != work_nonce) {
+				applog(LOG_ERR, "\t\t\t\t\t\t\t\t\tchip %d FAIL!!(nonce result:0x%08x = expected:0x%08x)", *ret32, work_nonce);
+				res = -1;
+				continue;
+			}
+			applog(LOG_ERR, "OK");
+		}
+	}
+	return res;
+}
+
 struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 {
 	int i;
@@ -1041,13 +1328,21 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 
 	for(i=0; i<MAX_SPI_PORT; i++)
 		if(ctx->config.bus == spi_available_bus[i]) break;
-	tsb1101->pinnum_gpio_gn  =  gn_pin[i];
-	tsb1101->pinnum_gpio_oon = oon_pin[i];
+	tsb1101->pinnum_gpio_gn    =    gn_pin[i];
+	tsb1101->pinnum_gpio_oon   =   oon_pin[i];
+	tsb1101->pinnum_gpio_vctrl = vctrl_pin[i];
 	tsb1101->volt_ch = adc_ch[i];
 
 	tsb1101->num_chips = chain_detect(tsb1101);
 	if (tsb1101->num_chips == 0)
 		goto failure;
+
+	if(((tsb1101->chips[0].rev>>16)&0xf) != 0x0) {
+		if (tsb1101->num_chips < tsb1101_config_options.min_chips) {
+			applog(LOG_ERR, "%d: failed to get enough chips(%d; it must be over than %d)", chain_id, tsb1101->num_chips, tsb1101_config_options.min_chips);
+			goto failure;
+		}
+	}
 
 	applog(LOG_WARNING, "spidev%d.%d: %d: Found %d TSB1101 chips",
 	       tsb1101->spi_ctx->config.bus, tsb1101->spi_ctx->config.cs_line,
@@ -1064,8 +1359,12 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	for (i = 0; i < tsb1101->num_active_chips; i++)
 		check_chip(tsb1101, i+1);
 
+#define	DEFAULT_TEST_TIMEOUT	4
 	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
 	calc_nonce_range(tsb1101);
+	if(tsb1101_config_options.test_mode == 1) {
+		hashboard_test(tsb1101);
+	}
 
 	applog(LOG_WARNING, "%d: found %d chips with total %d active cores",
 	       tsb1101->chain_id, tsb1101->num_active_chips, tsb1101->num_cores);
@@ -1152,6 +1451,21 @@ void tsb1101_detect(bool hotplug)
 		/* config options are global, scan them once */
 		parsed_config_options = &tsb1101_config_options;
 	}
+	if (opt_tsb1101_min_cores != NULL) {
+		int min_cores;
+		sscanf(opt_tsb1101_min_cores, "%d", &min_cores);
+		tsb1101_config_options.min_cores = min_cores;
+	}
+	if (opt_tsb1101_min_chips != NULL) {
+		int min_chips;
+		sscanf(opt_tsb1101_min_chips, "%d", &min_chips);
+		tsb1101_config_options.min_chips = min_chips;
+	}
+	if (opt_tsb1101_chiptest != NULL) {
+		tsb1101_config_options.test_mode = 1;
+	}
+	else
+		tsb1101_config_options.test_mode = 0;
 	applog(LOG_DEBUG, "TSB1101 detect");
 
 	/* register global SPI context */
@@ -1171,27 +1485,6 @@ void tsb1101_detect(bool hotplug)
 	}
 }
 
-int get_volt(int ch)
-{
-#if 0
-	int ret = -1;
-	int fd, val;
-	char adcpath[64];
-
-	sprintf(adcpath, "/sys/bus/iio/devices/iio\:device0/in_voltage%d_raw", ch);
-	fd = open(adcpath, O_RDONLY);
-
-	ret = read(fd, &val, 4);
-
-	if(val
-
-	close(fd);
-
-	return ret;
-#else
-	return 18000;
-#endif
-}
 
 #define TEMP_UPDATE_INT_MS	2000
 static int64_t tsb1101_scanwork(struct thr_info *thr)
@@ -1238,7 +1531,7 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 		tsb1101->last_temp_time = get_current_ms();
 
-		tsb1101->volt = get_volt(tsb1101->volt_ch);
+		tsb1101->mvolt = get_mvolt(tsb1101->volt_ch);
 	}
 	int cid = tsb1101->chain_id;
 	/* poll queued results */
