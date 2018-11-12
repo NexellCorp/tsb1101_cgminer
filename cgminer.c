@@ -9826,6 +9826,35 @@ static void initialise_usb(void) {
 #define initialise_usb() {}
 #endif
 
+/* This function wait until time sync with NTP */
+static void sync_time(void)
+{
+	uint64_t st_stamp, ct_stamp;
+	int synced = 0;
+	struct stat st, ct;
+
+	while((stat("/var/lib/systemd/clock", &st))) {
+		usleep(1000000);
+	}
+
+	do {
+		if(stat("/var/lib/systemd/clock", &ct)) {
+			synced = 0;
+			usleep(1000000);
+		}
+		else {
+			if(ct.st_mtim.tv_sec > (st.st_mtim.tv_sec+20)) {
+				struct timeval nowtv;
+				cgtime(&nowtv);
+				synced = 1;
+			}
+			else {
+				usleep(1000000);
+			}
+		}
+	} while(!synced);
+}
+
 int main(int argc, char *argv[])
 {
 	struct sigaction handler;
@@ -10199,6 +10228,7 @@ begin_bench:
 		cgpu->rolling = cgpu->total_mhashes = 0;
 	}
 
+	sync_time();
 	cgtime(&total_tv_start);
 	cgtime(&total_tv_end);
 	cgtime(&tv_hashmeter);
