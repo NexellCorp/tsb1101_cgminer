@@ -98,6 +98,8 @@ enum TSB1101_command {
 	SPI_CMD_READ_HASH		= 0x20,
 	SPI_CMD_READ_FEATURE	= 0x32,
 	SPI_CMD_READ_REVISION	= 0x33,
+	SPI_CMD_SET_PLL_FOUT_EN	= 0x34,
+	SPI_CMD_SET_PLL_RESETB 	= 0x35,
 };
 
 /*
@@ -106,7 +108,7 @@ enum TSB1101_command {
  * - 2000 kHz SPI clock
  */
 struct tsb1101_config_options tsb1101_config_options = {
-	.pll = 16000, .udiv = (16+1), .spi_clk_khz = 500, .min_cores = DEFAULT_MIN_CORES, .min_chips = DEFAULT_MIN_CHIPS,
+	.pll = 550, .udiv = (16+1), .spi_clk_khz = 500, .min_cores = DEFAULT_MIN_CORES, .min_chips = DEFAULT_MIN_CHIPS,
 };
 
 /* override values with --bitmine-tsb1101-options ref:sys:spi: - use 0 for default */
@@ -746,7 +748,7 @@ static bool check_chip_pll_lock(struct tsb1101_chain *tsb1101, int chip_id)
 			applog(LOG_WARNING, "%d: error in READ_PLL", cid);
 			return false;
 		}
-		if(ret[0]&1) {
+		if(ret[2]&(1<<7)) {
 			applog(LOG_WARNING, "%d: PLL locked %d(0x%x)CHIP", cid, chip_id, chip_id);
 			return true;
 		}
@@ -755,6 +757,66 @@ static bool check_chip_pll_lock(struct tsb1101_chain *tsb1101, int chip_id)
 	}
 	applog(LOG_ERR, "%d: chip %d failed PLL lock", cid, chip_id);
 	return false;
+}
+
+struct pll_conf {
+	int freq;
+	union {
+		struct {
+			int p        : 6;
+			int m        :10;
+			int s        : 3;
+			int bypass   : 1;
+			int div_sel  : 1;
+			int afc_enb  : 1;
+			int extafc   : 5;
+			int feed_en  : 1;
+			int fsel     : 1;
+			int rsvd     : 3;
+		};
+		unsigned int val;
+	};
+};
+
+static struct pll_conf pll_sets[] = {
+	{ 300, {6, 600, 2, 0, 1, 0, 0, 0, 0, 0}},
+	{ 350, {6, 700, 2, 0, 1, 0, 0, 0, 0, 0}},
+	{ 400, {6, 400, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 450, {6, 450, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 500, {6, 500, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 550, {6, 550, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 600, {6, 600, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 650, {6, 650, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 700, {6, 700, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 750, {6, 750, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 800, {6, 800, 1, 0, 1, 0, 0, 0, 0, 0}},
+	{ 850, {6, 425, 0, 0, 1, 0, 0, 0, 0, 0}},
+	{ 900, {6, 450, 0, 0, 1, 0, 0, 0, 0, 0}},
+	{ 950, {6, 475, 0, 0, 1, 0, 0, 0, 0, 0}},
+	{1000, {6, 500, 0, 0, 1, 0, 0, 0, 0, 0}},
+};
+
+#define NUM_PLL_SET (sizeof(pll_sets)/sizeof(struct pll_conf))
+
+static int get_pll_idx(int pll)
+{
+	int ret, ii;
+
+	struct pll_conf *plls;
+
+	if(pll < pll_sets[0].freq)
+		return -1;
+	if(pll > pll_sets[NUM_PLL_SET-1].freq) {
+		applog(LOG_WARNING, "set to Max Frequency setting (%d)", pll_sets[NUM_PLL_SET-1].freq);
+		return (NUM_PLL_SET-1);
+	}
+
+	ret = 0;
+	for(plls = &pll_sets[0]; plls; plls++) {
+		if(pll <= plls->freq) break;
+		ret++;
+	}
+	return ret;
 }
 
 static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
@@ -768,16 +830,33 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
 	int to = (chip_id == 0) ? tsb1101->num_active_chips : chip_id - 1;
 
 	if(((tsb1101->chips[0].rev>>16)&0xf) == 0x0) {
-		applog(LOG_WARNING, "chip%d: skip PLL because FPGA", 1);
+		applog(LOG_WARNING, "%d: chip%d: skip PLL because FPGA", 1);
 		for(ii=from; ii<to; ii++)
 			tsb1101->chips[ii].mhz = 100;
 	}
 	else {
-		sbuf[0] = (uint8_t)(pll>>24)&0xff;
-		sbuf[1] = (uint8_t)(pll>>16)&0xff;
-		sbuf[2] = (uint8_t)(pll>> 8)&0xff;
-		sbuf[3] = (uint8_t)(pll>> 0)&0xff;
-		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL, 0, sbuf, 4, 2);
+		int pll_idx;
+		pll_idx = get_pll_idx(pll);
+
+		if(pll_idx < 0) {
+			applog(LOG_ERR, "%d: too low frequency (%d), it must be over than %d", pll, pll_sets[0].freq);
+			return false;
+		}
+
+		// PLL_RESETB:0
+		sbuf[0] = 0;
+		sbuf[1] = 0;
+		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_RESETB, chip_id, sbuf, 2, 0);
+		// PLL_FOUT_EN:0
+		sbuf[0] = 0;
+		sbuf[1] = 0;
+		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_FOUT_EN, chip_id, sbuf, 2, 0);
+
+		sbuf[0] = (uint8_t)(pll_sets[pll_idx].val>>24)&0xff;
+		sbuf[1] = (uint8_t)(pll_sets[pll_idx].val>>16)&0xff;
+		sbuf[2] = (uint8_t)(pll_sets[pll_idx].val>> 8)&0xff;
+		sbuf[3] = (uint8_t)(pll_sets[pll_idx].val>> 0)&0xff;
+		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL, chip_id, sbuf, 4, 0);
 //		if( (ret[0] != SPI_CMD_SET_PLL) || (ret[1] != 0) ) {
 //			applog(LOG_WARNING, "%d: error in SET_PLL", cid);
 //			return false;
@@ -789,9 +868,17 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
 					   cid, ii+1);
 				return false;
 			}
-			// TODO
-			tsb1101->chips[ii].mhz = 100;
+			tsb1101->chips[ii].mhz = pll_sets[pll_idx].freq;
 		}
+		// PLL_RESETB:1
+		sbuf[0] = 0;
+		sbuf[1] = 1;
+		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_RESETB, chip_id, sbuf, 2, 0);
+		cgsleep_us(50);
+		// PLL_FOUT_EN:1
+		sbuf[0] = 0;
+		sbuf[1] = 1;
+		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_FOUT_EN, chip_id, sbuf, 2, 0);
 	}
 	return true;
 }
@@ -805,7 +892,7 @@ static bool set_control(struct tsb1101_chain *tsb1101, int chip_id, int udiv)
 	sbuf[1] = (uint8_t)(udiv>>16)&0xff;
 	sbuf[2] = (uint8_t)(udiv>> 8)&0xff;
 	sbuf[3] = (uint8_t)(udiv>> 0)&0xff;
-	ret = exec_cmd(tsb1101, SPI_CMD_SET_CONTROL, chip_id, sbuf, 4, 2);
+	ret = exec_cmd(tsb1101, SPI_CMD_SET_CONTROL, chip_id, sbuf, 4, 0);
 //	if( (ret[0] != SPI_CMD_SET_CONTROL) || (ret[1] != 0) ) {
 //		applog(LOG_WARNING, "%d: error in SET_CONTROL", cid);
 //		return false;
@@ -1445,10 +1532,8 @@ void tsb1101_detect(bool hotplug)
 		       &spi_clk, &sys_clk_mhz, &udiv);
 		if (spi_clk != 0)
 			tsb1101_config_options.spi_clk_khz = spi_clk;
-		if (sys_clk_mhz == 100)
-			tsb1101_config_options.pll = 0x000c4004;
-		else //if (sys_clk_mhz == 500)
-			tsb1101_config_options.pll = 0x000a5004;
+		if (sys_clk_mhz != 0)
+			tsb1101_config_options.pll = sys_clk_mhz;
 		if (udiv != 0)
 			tsb1101_config_options.udiv = udiv;
 
