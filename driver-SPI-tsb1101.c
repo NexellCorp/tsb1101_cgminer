@@ -757,7 +757,7 @@ static bool check_chip_pll_lock(struct tsb1101_chain *tsb1101, int chip_id)
 	return false;
 }
 
-static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll, int udiv)
+static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
 {
 	int ii;
 	uint8_t *ret;
@@ -784,21 +784,28 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll, 
 //		}
 
 		for (ii = from; ii < to; ii++) {
-			if (!check_chip_pll_lock(tsb1101, chip_id)) {
+			if (!check_chip_pll_lock(tsb1101, ii+1)) {
 				applog(LOG_ERR, "%d: chip %d failed PLL lock",
-					   cid, chip_id);
+					   cid, ii+1);
 				return false;
 			}
 			// TODO
 			tsb1101->chips[ii].mhz = 100;
 		}
 	}
+	return true;
+}
+
+static bool set_control(struct tsb1101_chain *tsb1101, int chip_id, int udiv)
+{
+	uint8_t *ret;
+	uint8_t sbuf[4];
 
 	sbuf[0] = (uint8_t)(udiv>>24)&0xff;
 	sbuf[1] = (uint8_t)(udiv>>16)&0xff;
 	sbuf[2] = (uint8_t)(udiv>> 8)&0xff;
 	sbuf[3] = (uint8_t)(udiv>> 0)&0xff;
-	ret = exec_cmd(tsb1101, SPI_CMD_SET_CONTROL, 0, sbuf, 4, 2);
+	ret = exec_cmd(tsb1101, SPI_CMD_SET_CONTROL, chip_id, sbuf, 4, 2);
 //	if( (ret[0] != SPI_CMD_SET_CONTROL) || (ret[1] != 0) ) {
 //		applog(LOG_WARNING, "%d: error in SET_CONTROL", cid);
 //		return false;
@@ -1348,7 +1355,9 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	       tsb1101->spi_ctx->config.bus, tsb1101->spi_ctx->config.cs_line,
 	       tsb1101->chain_id, tsb1101->num_chips);
 
-	if (!set_pll_config(tsb1101, 0, tsb1101_config_options.pll, tsb1101_config_options.udiv))
+	if (!set_pll_config(tsb1101, 0, tsb1101_config_options.pll))
+		goto failure;
+	if (!set_control(tsb1101, 0, tsb1101_config_options.udiv))
 		goto failure;
 
 	cmd_RESET_BCAST(tsb1101, 0xed);
