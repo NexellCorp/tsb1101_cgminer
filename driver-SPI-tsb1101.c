@@ -1408,28 +1408,23 @@ static bool detect_single_chain(struct spi_ctx *ctx, int idx)
 void tsb1101_detect(bool hotplug)
 {
 	int ii;
-#if 0
 	int fd_gpio;
-	fd_gpio = open("/sys/class/gpio/export", O_WRONLY);
-//	write(fd_gpio, "127", 3);	// reset
-	write(fd_gpio, "125", 3);	// oon
-	write(fd_gpio, "126", 3);	// gn
-	close(fd_gpio);
-
-//	fd_gpio = open("/sys/class/gpio/gpio127/direction", O_WRONLY);
-//	write(fd_gpio, "out", 4);	// reset
-//	close(fd_gpio);
-	fd_gpio = open("/sys/class/gpio/gpio125/direction", O_WRONLY);
-	write(fd_gpio, "in", 3);	// oon
-	close(fd_gpio);
-	fd_gpio = open("/sys/class/gpio/gpio126/direction", O_WRONLY);
-	write(fd_gpio, "in", 3);	// gn
-	close(fd_gpio);
-#endif
 
 	/* no hotplug support for SPI */
 	if (hotplug)
 		return;
+
+	fd_gpio = open("/sys/class/gpio/gpio127/value", O_WRONLY);
+	write(fd_gpio, "0", 2);	// reset
+	cgsleep_us(1000);
+	write(fd_gpio, "1", 2);	// reset
+	close(fd_gpio);
+
+	fd_gpio = open("/sys/class/gpio/gpio132/value", O_WRONLY);
+	write(fd_gpio, "0", 2);	// reset
+	cgsleep_us(1000);
+	write(fd_gpio, "1", 2);	// reset
+	close(fd_gpio);
 
 	/* parse tsb1101-options */
 	if (opt_tsb1101_options != NULL && parsed_config_options == NULL) {
