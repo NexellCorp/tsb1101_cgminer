@@ -29,6 +29,11 @@ struct work_queue {
  */
 #define MAX_CMD_LENGTH		(360/8+16/8)	// param + command
 
+#define	TIME_LIMIT_OF_OON	4000	/* mili seconds */
+#define OON_INT_MAXJOB	2
+
+#define TEMP_UPDATE_INT_MS	2000
+
 #define MAX_JOB_ID_NUM	64
 #define JOB_ID_NUM_MASK	(MAX_JOB_ID_NUM-1)	/* total 4 */
 
@@ -94,6 +99,8 @@ struct tsb1101_chain {
 	int volt_ch;
 	int mvolt;
 	float volt_f;
+	int last_chip;
+	int oon_begin;
 };
 
 #define MAX_SPI_PORT	2
