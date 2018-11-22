@@ -67,7 +67,6 @@ static struct work *wq_dequeue(struct work_queue *wq)
  * if not cooled sufficiently, communication fails and chip is temporary
  * disabled. we let it inactive for 30 seconds to cool down
  *
- * TODO: to be removed after bring up / test phase
  */
 #define COOLDOWN_MS (30 * 1000)
 /* if after this number of retries a chip is still inaccessible, disable it */
@@ -80,7 +79,7 @@ enum TSB1101_command {
 	SPI_CMD_RUN_BIST		= 0x02,
 	SPI_CMD_READ_BIST		= 0x03,
 	SPI_CMD_RESET			= 0x04,
-	SPI_CMD_SET_PLL			= 0x05,
+	SPI_CMD_SET_PLL			= 0x05, /* noresponse */
 	SPI_CMD_READ_PLL		= 0x06,
 	SPI_CMD_WRITE_PARM		= 0x07,
 	SPI_CMD_READ_PARM		= 0x08,
@@ -92,7 +91,7 @@ enum TSB1101_command {
 	SPI_CMD_CLEAR_OON		= 0x0E,
 	SPI_CMD_SET_DISABLE		= 0x10,
 	SPI_CMD_READ_DISABLE	= 0x11,
-	SPI_CMD_SET_CONTROL		= 0x12,
+	SPI_CMD_SET_CONTROL		= 0x12,	/* no response */
 	SPI_CMD_READ_TEMP		= 0x14,
 	SPI_CMD_WRITE_NONCE		= 0x16,
 	SPI_CMD_READ_HASH		= 0x20,
@@ -377,7 +376,7 @@ static uint8_t *cmd_BIST_BCAST(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 	return ret;
 }
 
-static uint8_t *cmd_RESET_BCAST(struct tsb1101_chain *tsb1101, uint8_t strategy)
+static uint8_t *cmd_RESET_BCAST(struct tsb1101_chain *tsb1101)
 {
 	uint8_t *ret = exec_cmd(tsb1101, SPI_CMD_RESET, 0x00, NULL, 0, 2);
 //	if (ret == NULL || (ret[0] != SPI_CMD_RESET && tsb1101->num_chips != 0)) {
@@ -722,7 +721,7 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 static uint8_t cmd_READ_TEMP(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
 	uint8_t *ret;
-	if(((tsb1101->chips[chip_id-1].rev>>16)&0xf) == 0x0) return 30; // for FPGA, there is no temperature sensor in FPGA, so 30 is just a value for testing
+	if(((tsb1101->chips[tsb1101->num_chips-1].rev>>16)&0xf) == 0x0) return 30; // for FPGA, there is no temperature sensor in FPGA, so 30 is just a value for testing
 	ret = exec_cmd(tsb1101, SPI_CMD_READ_TEMP, chip_id, NULL, 0, 2);
 	if (ret == NULL || ret[0] != chip_id) {
 		applog(LOG_ERR, "%d: cmd_READ_TEMP chip %d failed",
@@ -819,6 +818,17 @@ static int get_pll_idx(int pll)
 	return ret;
 }
 
+static bool set_pll_fout_en(struct tsb1101_chain *tsb1101, int chip_id, int en)
+{
+	uint8_t *ret;
+	uint8_t sbuf[2];
+	// PLL_FOUT_EN:1
+	sbuf[0] = 0;
+	sbuf[1] = 1;
+	ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_FOUT_EN, chip_id, sbuf, 2, 0);
+	return true;
+}
+
 static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
 {
 	int ii;
@@ -826,13 +836,20 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
 	uint8_t sbuf[4];
 	int cid = tsb1101->chain_id;
 
-	int from = (chip_id == 0) ? 0 : chip_id - 1;
-	int to = (chip_id == 0) ? tsb1101->num_active_chips : chip_id - 1;
+	int chip_index = chip_id -1;
+	if(tsb1101->last_chip)
+		chip_index += (tsb1101->last_chip-1);
 
-	if(((tsb1101->chips[0].rev>>16)&0xf) == 0x0) {
-		applog(LOG_WARNING, "%d: chip%d: skip PLL because FPGA", 1);
-		for(ii=from; ii<to; ii++)
-			tsb1101->chips[ii].mhz = 100;
+	if(((tsb1101->chips[tsb1101->num_chips-1].rev>>16)&0xf) == 0x0) {
+		if(chip_id) {
+			tsb1101->chips[chip_index].mhz = 100;
+			applog(LOG_WARNING, "%d: chip%d: skip PLL because FPGA", cid, chip_index);
+		}
+		else {
+			for(ii=tsb1101->last_chip; ii<tsb1101->num_chips; ii++)
+				tsb1101->chips[ii].mhz = 100;
+			applog(LOG_WARNING, "%d: chip%d~%d: skip PLL because FPGA", cid, tsb1101->last_chip, (tsb1101->num_chips-1));
+		}
 	}
 	else {
 		int pll_idx;
@@ -848,37 +865,42 @@ static bool set_pll_config(struct tsb1101_chain *tsb1101, int chip_id, int pll)
 		sbuf[1] = 0;
 		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_RESETB, chip_id, sbuf, 2, 0);
 		// PLL_FOUT_EN:0
-		sbuf[0] = 0;
-		sbuf[1] = 0;
-		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_FOUT_EN, chip_id, sbuf, 2, 0);
+		set_pll_fout_en(tsb1101, chip_id, 0);
 
 		sbuf[0] = (uint8_t)(pll_sets[pll_idx].val>>24)&0xff;
 		sbuf[1] = (uint8_t)(pll_sets[pll_idx].val>>16)&0xff;
 		sbuf[2] = (uint8_t)(pll_sets[pll_idx].val>> 8)&0xff;
 		sbuf[3] = (uint8_t)(pll_sets[pll_idx].val>> 0)&0xff;
 		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL, chip_id, sbuf, 4, 0);
-//		if( (ret[0] != SPI_CMD_SET_PLL) || (ret[1] != 0) ) {
-//			applog(LOG_WARNING, "%d: error in SET_PLL", cid);
-//			return false;
-//		}
 
-		for (ii = from; ii < to; ii++) {
-			if (!check_chip_pll_lock(tsb1101, ii+1)) {
-				applog(LOG_ERR, "%d: chip %d failed PLL lock",
-					   cid, ii+1);
+		if(chip_id) {
+			if (!check_chip_pll_lock(tsb1101, chip_id)) {
+				applog(LOG_ERR, "%d: chip %d (chip_id:%d) failed PLL lock",
+					   cid, chip_index, chip_id);
+				tsb1101->chips[chip_index].mhz = 0;
 				return false;
 			}
-			tsb1101->chips[ii].mhz = pll_sets[pll_idx].freq;
+			else
+				tsb1101->chips[chip_index].mhz = pll_sets[pll_idx].freq;
 		}
-		// PLL_RESETB:1
-		sbuf[0] = 0;
-		sbuf[1] = 1;
-		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_RESETB, chip_id, sbuf, 2, 0);
-		cgsleep_us(50);
-		// PLL_FOUT_EN:1
-		sbuf[0] = 0;
-		sbuf[1] = 1;
-		ret = exec_cmd(tsb1101, SPI_CMD_SET_PLL_FOUT_EN, chip_id, sbuf, 2, 0);
+		else {
+			int res = 0;
+			for(ii=tsb1101->last_chip; ii<tsb1101->num_chips; ii++) {
+				int chipid = ii +1;
+				if(tsb1101->last_chip)
+					chipid += (1-tsb1101->last_chip);
+
+				if (!check_chip_pll_lock(tsb1101, chipid)) {
+					applog(LOG_ERR, "%d: chip %d (chipid:%d) failed PLL lock",
+						   cid, ii, chipid);
+					tsb1101->chips[ii].mhz = 0;
+					res++;
+				}
+				else
+					tsb1101->chips[ii].mhz = pll_sets[pll_idx].freq;
+			}
+			if(res) return false;
+		}
 	}
 	return true;
 }
@@ -893,15 +915,11 @@ static bool set_control(struct tsb1101_chain *tsb1101, int chip_id, int udiv)
 	sbuf[2] = (uint8_t)(udiv>> 8)&0xff;
 	sbuf[3] = (uint8_t)(udiv>> 0)&0xff;
 	ret = exec_cmd(tsb1101, SPI_CMD_SET_CONTROL, chip_id, sbuf, 4, 0);
-//	if( (ret[0] != SPI_CMD_SET_CONTROL) || (ret[1] != 0) ) {
-//		applog(LOG_WARNING, "%d: error in SET_CONTROL", cid);
-//		return false;
-//	}
 
 	return true;
 }
 
-static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id)
+static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id, int chip_index)
 {
 	int cid = tsb1101->chain_id;
 	int ii;
@@ -915,26 +933,25 @@ static bool check_chip(struct tsb1101_chain *tsb1101, int chip_id)
 	ret = exec_cmd(tsb1101, SPI_CMD_READ_BIST, chip_id, NULL, 0, 2);
 	if(ret[0]&1) {
 		applog(LOG_WARNING, "%d: error in READ_BIST", cid);
-		tsb1101->chips[chip_id-1].num_cores = 0;
 		return false;
 	}
 
-	tsb1101->chips[chip_id-1].num_cores = ret[1];
-	if(((tsb1101->chips[0].rev>>16)&0xf) != 0x0) {
-		if(tsb1101->chips[chip_id-1].num_cores < tsb1101_config_options.min_cores) {
-			applog(LOG_ERR, "%d: chip %d has not enough cores(%d), it must be over than %d", cid, chip_id, tsb1101->chips[chip_id-1].num_cores, tsb1101_config_options.min_cores);
-			tsb1101->chips[chip_id-1].num_cores = 0;
-			tsb1101->chips[chip_id-1].perf = 0;
+	tsb1101->chips[chip_index].num_cores = ret[1];
+	if(((tsb1101->chips[chip_index].rev>>16)&0xf) != 0x0) {
+		if(tsb1101->chips[chip_index].num_cores < tsb1101_config_options.min_cores) {
+			applog(LOG_ERR, "%d: chip %d has not enough cores(%d), it must be over than %d", cid, chip_id, tsb1101->chips[chip_index].num_cores, tsb1101_config_options.min_cores);
+			tsb1101->chips[chip_index].num_cores = 0;
+			tsb1101->chips[chip_index].perf = 0;
 			return false;
 		}
 	}
-	applog(LOG_WARNING, "%d: Found chip %d with %d active cores",
-	       cid, chip_id, tsb1101->chips[chip_id-1].num_cores);
+	applog(LOG_WARNING, "%d: Found chip %d(chipid:%d) with %d active cores",
+	       cid, chip_index, chip_id, tsb1101->chips[chip_index].num_cores);
 
-	tsb1101->num_cores += tsb1101->chips[chip_id-1].num_cores;
-	tsb1101->chips[chip_id-1].perf = tsb1101->chips[chip_id-1].num_cores*tsb1101->chips[chip_id-1].mhz;
-	applog(LOG_DEBUG, "%d: chip %d perf = %ld\n", cid, chip_id, tsb1101->chips[chip_id-1].perf);
-	tsb1101->perf += tsb1101->chips[chip_id-1].perf;
+	tsb1101->num_cores += tsb1101->chips[chip_index].num_cores;
+	tsb1101->chips[chip_index].perf = tsb1101->chips[chip_index].num_cores*tsb1101->chips[chip_index].mhz;
+	applog(LOG_DEBUG, "%d: chip %d perf = %ld\n", cid, chip_id, tsb1101->chips[chip_index].perf);
+	tsb1101->perf += tsb1101->chips[chip_index].perf;
 
 	return true;
 }
@@ -948,24 +965,27 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 	bool ret;
 
 	if(tsb1101_config_options.test_mode == 1) {
-		for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
+		for(ii=tsb1101->last_chip; ii<tsb1101->num_chips; ii++) {
 			tsb1101->chips[ii].start_nonce = 0;
 			tsb1101->chips[ii].end_nonce = 0xffffffff;
 		}
 	}
 	else {
-		tsb1101->chips[0].start_nonce = 0;
-		for(ii=0; ii<(tsb1101->num_active_chips-1); ii++) {
+		tsb1101->chips[tsb1101->last_chip].start_nonce = 0;
+		for(ii=tsb1101->last_chip; ii<(tsb1101->num_chips-1); ii++) {
 			tsb1101->chips[ii].end_nonce = tsb1101->chips[ii].start_nonce
 				+ ((0xffffffff*tsb1101->chips[ii].perf)/tsb1101->perf);
 			tsb1101->chips[ii+1].start_nonce = tsb1101->chips[ii].end_nonce+1;
 		}
-		tsb1101->chips[tsb1101->num_active_chips-1].end_nonce = 0xffffffff;
+		tsb1101->chips[tsb1101->num_chips-1].end_nonce = 0xffffffff;
 	}
 
 	tsb1101->disabled = false;
-	for(ii=0; ii<tsb1101->num_active_chips; ii++) {
-		applog(LOG_DEBUG, "chip %2d : %08X ~ %08X", ii+1, tsb1101->chips[ii].start_nonce, tsb1101->chips[ii].end_nonce);
+	for(ii=tsb1101->last_chip; ii<tsb1101->num_chips; ii++) {
+		int chip_id = ii +1;
+		if(tsb1101->last_chip)
+			chip_id += (1 -tsb1101->last_chip);
+		applog(LOG_DEBUG, "chip %2d(chip_index:%d) : %08X ~ %08X", chip_id, ii, tsb1101->chips[ii].start_nonce, tsb1101->chips[ii].end_nonce);
 
 		start_nonce_ptr = (uint32_t *)(spi_tx+2  );
 		end_nonce_ptr   = (uint32_t *)(spi_tx+2+4);
@@ -1061,68 +1081,202 @@ static int get_current_ms(void)
 	return cgtimer_to_ms(&ct);
 }
 
-static bool is_chip_disabled(struct tsb1101_chain *tsb1101, uint8_t chip_id)
+static bool is_chip_disabled(struct tsb1101_chain *tsb1101, uint8_t chip_index)
 {
-	struct tsb1101_chip *chip = &tsb1101->chips[chip_id - 1];
+	struct tsb1101_chip *chip = &tsb1101->chips[chip_index];
 	return chip->disabled || chip->cooldown_begin != 0;
 }
 
 /* check and disable chip, remember time */
-static void disable_chip(struct tsb1101_chain *tsb1101, uint8_t chip_id)
+static void disable_chip(struct tsb1101_chain *tsb1101, uint8_t chip_index)
 {
-	// TODO
-//	flush_spi(tsb1101);
-#if 1
-	struct tsb1101_chip *chip = &tsb1101->chips[chip_id];
+	struct tsb1101_chip *chip = &tsb1101->chips[chip_index];
 	int cid = tsb1101->chain_id;
-	if (is_chip_disabled(tsb1101, chip_id)) {
+	if (is_chip_disabled(tsb1101, chip_index)) {
 		applog(LOG_WARNING, "%d: chip %d already disabled",
-		       cid, chip_id);
+		       cid, chip_index);
 		return;
 	}
-	applog(LOG_WARNING, "%d: temporary disabling chip %d", cid, chip_id);
+	applog(LOG_WARNING, "%d: temporary disabling chip %d", cid, chip_index);
 	chip->cooldown_begin = get_current_ms();
-#endif
+}
+
+static bool set_last_chip(struct tsb1101_chain *tsb1101, int last_chip)
+{
+	uint8_t *ret;
+	uint8_t dummy[32];
+	int ii, chip_id, abs_last_chip;
+
+	// if tsb1101->last_chip == 0, new_last_id == 3
+	//     index   = 0, 1, 2, 3, 4, 5, 6, ...
+	//     chip_id = 1, 2, 3, 4, 5, 6, 7, ...
+	// loop          1, 2, 2
+	// 
+	// if tsb1101->last_chip == 2, new_last_id == 3
+	//     index   = 0, 1, 2, 3, 4, 5, 6, ...
+	//     chip_id = 1, 1, 2, 3, 4, 5, 6, ...
+	// loop                2, 2, 2
+	// tsb1101->last_chip can be used as chip_index
+
+	for(ii=0; ii<last_chip; ii++) {
+		struct tsb1101_chip *chip = &tsb1101->chips[tsb1101->last_chip];
+		if(tsb1101->last_chip)
+			chip_id = 1;
+		else
+			chip_id = 2;
+		if(!set_control(tsb1101, chip_id, tsb1101_config_options.udiv|(1<<15))) {
+			tsb1101->disabled = true;
+			return false;
+		}
+
+		// SPI_CMD_AUTO_ADDRESS
+		ret = exec_cmd(tsb1101, SPI_CMD_AUTO_ADDRESS, 0x00, dummy, 32, 2);
+		if(ret[0] != SPI_CMD_AUTO_ADDRESS) {
+			applog(LOG_WARNING, "%d: error in AUTO_ADDRESS", tsb1101->chain_id);
+			tsb1101->disabled = true;
+			return false;
+		}
+
+		chip->disabled = true;
+		tsb1101->last_chip++;
+	}
+
+	tsb1101->num_chips = ret[1];
+
+	return true;
+}
+
+static bool reinit_chain(struct tsb1101_chain *tsb1101)
+{
+	uint8_t *ret;
+	int ii;
+	uint8_t dummy[32];
+	int chip_id;
+	struct tsb1101_chip *chip;
+
+	// last_chip 0
+	// chip_index 0, 1, 2, 3, 4,
+	// chip_id    1, 2, 3, 4, 5,
+	// loop       0, 1, 2, 3, 4, ...
+	//
+	// last_chip 1
+	// chip_index 0, 1, 2, 3, 4,
+	// chip_id    1, 2, 3, 4, 5,
+	// loop          2, 3, 4, 5, ...
+	//
+	// last_chip 2
+	// chip_index 0, 1, 2, 3, 4,
+	// chip_id    1, 1, 2, 3, 4,
+	// loop             2, 3, 4, ...
+	//
+	// last_chip 4
+	// chip_index 0, 1, 2, 3, 4, 5, 6,
+	// chip_id    1, 1, 1, 1, 2, 3, 4,
+	// loop                   2, 3, 4, ...
+	if(tsb1101->last_chip) {
+		if(!set_pll_fout_en(tsb1101, 1, 0)) {
+			tsb1101->disabled = true;
+			applog(LOG_ERR, "%d: all chip_id:1 fail to set fout en to 0", tsb1101->chain_id);
+			return false;
+		}
+	}
+
+	for(ii=tsb1101->last_chip; ii<tsb1101->num_chips; ii++) {
+		chip = &tsb1101->chips[ii];
+		chip_id = ii +1;
+		if(tsb1101->last_chip)
+			chip_id += (1 -tsb1101->last_chip);
+		if (!set_pll_config(tsb1101, chip_id, chip->mhz)) {
+			applog(LOG_ERR, "%d: chip_id:%d(index:%d) fail to set pll(%d)", tsb1101->chain_id, chip_id, ii, chip->mhz);
+			tsb1101->disabled = true;
+			return false;
+		}
+	}
+
+	ret = cmd_RESET_BCAST(tsb1101);
+
+	tsb1101->num_cores = 0;
+	tsb1101->perf = 0;
+
+	cmd_BIST_BCAST(tsb1101, 0);
+
+	for (ii = (tsb1101->num_chips-1); ii>=0; ii--) {
+		if (is_chip_disabled(tsb1101, ii)) {
+			applog(LOG_DEBUG, "%d: %d chip disabled", tsb1101->chain_id, ii);
+			continue;
+		}
+		chip = &tsb1101->chips[ii];
+		chip_id = ii +1;
+		if(tsb1101->last_chip)
+			chip_id -=  -(tsb1101->last_chip-1);
+		check_chip(tsb1101, chip_id, ii);
+	}
+
+	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
+
+	calc_nonce_range(tsb1101);
+
+	return true;
 }
 
 /* check if disabled chips can be re-enabled */
-void check_disabled_chips(struct tsb1101_chain *tsb1101)
+static bool check_disabled_chips(struct tsb1101_chain *tsb1101)
 {
-	int i;
+	int i, new_last_chip = 0;
 	int cid = tsb1101->chain_id;
-	for (i = 0; i < tsb1101->num_active_chips; i++) {
-#if 1
-		int chip_id = i + 1;
+	uint8_t *ret;
+	int chip_id;
+	int reset_flag = 0;
+	for (i = (tsb1101->num_chips-1); i>=0; i--) {
 		struct tsb1101_chip *chip = &tsb1101->chips[i];
-		if (!is_chip_disabled(tsb1101, chip_id))
+		if(chip->disabled) continue;
+		chip_id = i +1;
+		if(tsb1101->last_chip)
+			chip_id -=  -(tsb1101->last_chip-1);
+		if (!is_chip_disabled(tsb1101, i))
 			continue;
-		/* do not re-enable fully disabled chips */
-		if (chip->disabled)
-			continue;
-		if (chip->cooldown_begin + COOLDOWN_MS > get_current_ms())
-			continue;
-		if (!cmd_READ_ID(tsb1101, chip_id)) {
-			chip->fail_count++;
-			applog(LOG_WARNING, "%d: chip %d not yet working - %d",
-			       cid, chip_id, chip->fail_count);
-			if (chip->fail_count > DISABLE_CHIP_FAIL_THRESHOLD) {
-				applog(LOG_WARNING,
-				       "%d: completely disabling chip %d at %d",
-				       cid, chip_id, chip->fail_count);
+//		if (chip->cooldown_begin + COOLDOWN_MS > get_current_ms())
+//			continue;
+
+		// check remain job number
+		ret = cmd_READ_ID(tsb1101, chip_id);
+		if(ret == NULL) {
+			reset_flag = 1;
+			chip->disabled = true;
+			tsb1101->num_cores -= chip->num_cores;
+			chip->num_cores = 0;
+			chip->mhz = 0;
+			chip->perf = 0;
+			new_last_chip = chip_id;
+			tsb1101->last_chip += i +1;
+			break;
+		}
+		else if((ret[2]&0x7)>=OON_INT_MAXJOB) {
+			reset_flag = 1;
+			if(chip->mhz > pll_sets[0].freq) {
+				chip->mhz -= 50;
+			}
+			else {
 				chip->disabled = true;
 				tsb1101->num_cores -= chip->num_cores;
-				continue;
+				chip->num_cores = 0;
+				chip->mhz = 0;
+				chip->perf = 0;
+				new_last_chip = chip_id;
+				tsb1101->last_chip += i +1;
+				break;
 			}
-			/* restart cooldown period */
-			chip->cooldown_begin = get_current_ms();
-			continue;
 		}
-		applog(LOG_WARNING, "%d: chip %d is working again",
-		       cid, chip_id);
-		chip->cooldown_begin = 0;
-		chip->fail_count = 0;
-#endif
 	}
+	if(reset_flag == 0) {
+		applog(LOG_WARNING, "%d: there is no errors for timeout OON", cid);
+		return true;
+	}
+	if(new_last_chip) {
+		if(!set_last_chip(tsb1101, new_last_chip))
+			return false;
+	}
+	return reinit_chain(tsb1101);
 }
 
 /********** job creation and result evaluation */
@@ -1170,7 +1324,7 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 	int cid = tsb1101->chain_id;
 	struct tsb1101_chip *chip;
 	bool retval = false;
-	uint8_t chip_id = 0;
+	uint8_t chip_id = tsb1101->num_chips-1;
 	int job_id;
 
 	chip = &tsb1101->chips[chip_id];
@@ -1190,7 +1344,8 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 
 		applog(LOG_ERR, "%d: failed to set work for job %d",
 		       cid, job_id);
-		disable_chip(tsb1101, chip_id);
+//		disable_chip(tsb1101, chip_id);
+		tsb1101->disabled = true;
 	} else {
 		chip->work[chip->last_queued_id] = work;
 		chip->last_queued_id++;
@@ -1202,7 +1357,6 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 static bool set_work_test(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 {
 	int cid = tsb1101->chain_id;
-	struct tsb1101_chip *chip;
 	bool retval = false;
 	int job_id;
 	struct work work;
@@ -1215,7 +1369,6 @@ static bool set_work_test(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 		0x9E, 0xB7, 0x91, 0x5C, 0x88, 0x7A, 0x53, 0x6D, 
 		0xC8, 0x02, 0x19, 0x00, 0x89, 0x6C, 0x00, 0x00};
 
-	chip = &tsb1101->chips[chip_id];
 	job_id = 1;
 
 	if (!cmd_WRITE_JOB_test(tsb1101, job_id, jobdata, chip_id)) {
@@ -1287,15 +1440,24 @@ static bool abort_work(struct tsb1101_chain *tsb1101)
 {
 	bool ret;
 	int i;
-	/* drop jobs already queued: reset strategy 0xed */
-	ret = cmd_RESET_BCAST(tsb1101, 0xed);
+	int chip_id;
+
+	ret = cmd_RESET_BCAST(tsb1101);
 
 	tsb1101->num_cores = 0;
 	tsb1101->perf = 0;
 	cmd_BIST_BCAST(tsb1101, 0);
 
-	for (i = 0; i < tsb1101->num_active_chips; i++)
-		check_chip(tsb1101, i+1);
+	for (i = (tsb1101->num_chips-1); i>=0; i--) {
+		struct tsb1101_chip *chip = &tsb1101->chips[i];
+		if(chip->disabled) continue;
+		chip_id = i +1;
+		if(tsb1101->last_chip)
+			chip_id -=  -(tsb1101->last_chip-1);
+		if (is_chip_disabled(tsb1101, i))
+			continue;
+		check_chip(tsb1101, chip_id, i);
+	}
 	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
 
 	calc_nonce_range(tsb1101);
@@ -1320,7 +1482,7 @@ static uint32_t work_nonce = DEFAULT_TEST_NONCE;
 static int mvolt_array[2] = {400, 420};
 static int hashboard_test(struct tsb1101_chain *tsb1101)
 {
-	int res = 0, i;
+	int res = 0, i, chip_id;
 	int mvolt_idx = 0;
 	applog(LOG_ERR, "----------------------------------------------------------------------");
 	applog(LOG_ERR, "----------------------- hash board test mode!! -----------------------");
@@ -1336,11 +1498,15 @@ static int hashboard_test(struct tsb1101_chain *tsb1101)
 			continue;
 		}
 		applog(LOG_ERR, "-- test chip at %d mV --", mvolt_array[mvolt_idx]);
-		for (i = 0; i < tsb1101->num_active_chips; i++) {
+		for (i = tsb1101->last_chip; i < tsb1101->num_chips; i++) {
 			int ii;
 			uint8_t *ret;
 			uint32_t *ret32;
-			ii = set_work_test(tsb1101, i+1);
+			chip_id = i +1;
+			if(tsb1101->last_chip)
+				chip_id +=  (1-tsb1101->last_chip);
+
+			ii = set_work_test(tsb1101, chip_id);
 			if(ii == false) {
 				applog(LOG_ERR, "\tchip %d FAIL!!(in the write job)", i);
 				res = -1;
@@ -1395,7 +1561,7 @@ static int hashboard_test(struct tsb1101_chain *tsb1101)
 			ret = cmd_READ_RESULT(tsb1101, i);
 			ret32 = (uint32_t *)ret;
 			*ret32 = bswap_32(*ret32);
-			*ret32 -= (tsb1101->chips[i-1].hash_depth*tsb1101->chips[i-1].num_cores);
+			*ret32 -= (tsb1101->chips[i].hash_depth*tsb1101->chips[i].num_cores);
 
 			*ret32 = bswap_32(*ret32);
 			if(*ret32 != work_nonce) {
@@ -1411,7 +1577,7 @@ static int hashboard_test(struct tsb1101_chain *tsb1101)
 
 struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 {
-	int i;
+	int i, chip_id;
 	struct tsb1101_chain *tsb1101 = malloc(sizeof(*tsb1101));
 	assert(tsb1101 != NULL);
 
@@ -1431,7 +1597,7 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	if (tsb1101->num_chips == 0)
 		goto failure;
 
-	if(((tsb1101->chips[0].rev>>16)&0xf) != 0x0) {
+	if(((tsb1101->chips[tsb1101->num_chips-1].rev>>16)&0xf) != 0x0) {
 		if (tsb1101->num_chips < tsb1101_config_options.min_chips) {
 			applog(LOG_ERR, "%d: failed to get enough chips(%d; it must be over than %d)", chain_id, tsb1101->num_chips, tsb1101_config_options.min_chips);
 			goto failure;
@@ -1447,13 +1613,19 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	if (!set_control(tsb1101, 0, tsb1101_config_options.udiv))
 		goto failure;
 
-	cmd_RESET_BCAST(tsb1101, 0xed);
+	cmd_RESET_BCAST(tsb1101);
 	tsb1101->num_cores = 0;
 	tsb1101->perf = 0;
 	cmd_BIST_BCAST(tsb1101, 0);
 
-	for (i = 0; i < tsb1101->num_active_chips; i++)
-		check_chip(tsb1101, i+1);
+	for (i = (tsb1101->num_chips-1); i>=0; i--) {
+		struct tsb1101_chip *chip = &tsb1101->chips[i];
+		if (is_chip_disabled(tsb1101, i)) continue;
+		chip_id = i +1;
+		if(tsb1101->last_chip)
+			chip_id -=  -(tsb1101->last_chip-1);
+		check_chip(tsb1101, chip_id, i);
+	}
 
 #define	DEFAULT_TEST_TIMEOUT	4
 	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
@@ -1574,8 +1746,6 @@ void tsb1101_detect(bool hotplug)
 	}
 }
 
-
-#define TEMP_UPDATE_INT_MS	2000
 static int64_t tsb1101_scanwork(struct thr_info *thr)
 {
 	int i;
@@ -1585,12 +1755,12 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 	if (tsb1101->num_cores == 0) {
 		cgpu->deven = DEV_DISABLED;
-		chain_detect(tsb1101);
+		reinit_chain(tsb1101);
 		return 0;
 	}
 	if (tsb1101->disabled) {
 		cgpu->deven = DEV_DISABLED;
-		chain_detect(tsb1101);
+		reinit_chain(tsb1101);
 		return 0;
 	}
 //	board_selector->select(tsb1101->chain_id);
@@ -1607,11 +1777,14 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 	if (tsb1101->last_temp_time + TEMP_UPDATE_INT_MS < get_current_ms()) {
 		tsb1101->high_temp_val = 0;
 		tsb1101->high_temp_id = -1;
-//		tsb1101->temp = board_selector->get_temp(0);
-		for (i = tsb1101->num_active_chips; i > 0; i--) {
-			tsb1101->temp[i-1] = cmd_READ_TEMP(tsb1101, i);
-			if(tsb1101->temp[i-1] > tsb1101->high_temp_val) {
-				tsb1101->high_temp_val = tsb1101->temp[i-1];
+		for (i = tsb1101->last_chip; i < tsb1101->num_chips; i++) {
+			chip_id = i +1;
+			if(tsb1101->last_chip)
+				chip_id += (1 -tsb1101->last_chip);
+
+			tsb1101->temp[i] = cmd_READ_TEMP(tsb1101, chip_id);
+			if(tsb1101->temp[i] > tsb1101->high_temp_val) {
+				tsb1101->high_temp_val = tsb1101->temp[i];
 				tsb1101->high_temp_id = i;
 			}
 		}
@@ -1640,7 +1813,7 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 			continue;
 		}
 
-		struct tsb1101_chip *chip = &tsb1101->chips[0];
+		struct tsb1101_chip *chip = &tsb1101->chips[tsb1101->num_chips-1];
 		struct work *work = chip->work[job_id - 1];
 		chip = &tsb1101->chips[chip_id - 1];
 		if (work == NULL) {
@@ -1665,8 +1838,21 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 
 	/* check for completed works */
 	for (i = 0; i<2; i++) {
-		if(get_pin(tsb1101->pinnum_gpio_oon) == '1') break;
-//		cmd_CLEAR_OON(tsb1101, 0);
+		if(get_pin(tsb1101->pinnum_gpio_oon) == '1') {
+			if(tsb1101->oon_begin) {
+//				applog(LOG_DEBUG, "%d: cur:%d > %d?", cid, get_current_ms(), (tsb1101->oon_begin + TIME_LIMIT_OF_OON));
+				if (get_current_ms() > (tsb1101->oon_begin + TIME_LIMIT_OF_OON)) {
+					check_disabled_chips(tsb1101);
+					break;
+				}
+				else continue;
+			}
+			else
+				tsb1101->oon_begin = get_current_ms();
+			break;
+		}
+
+		tsb1101->oon_begin = 0;
 
 		work_updated = true;
 
@@ -1687,7 +1873,6 @@ static int64_t tsb1101_scanwork(struct thr_info *thr)
 			   );
 	}
 
-	check_disabled_chips(tsb1101);
 	mutex_unlock(&tsb1101->lock);
 
 //	board_selector->release();
