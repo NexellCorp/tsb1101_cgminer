@@ -27,6 +27,7 @@ static struct spi_ctx *spi[MAX_SPI_PORT];
 static int spi_available_bus[MAX_SPI_PORT] = {0, 2};
 static int vctrl_pin[MAX_SPI_PORT] = {20, 9};
 static int plug_pin[MAX_SPI_PORT] = {24, 11};
+static int reset_pin[MAX_SPI_PORT] = {127, 132};
 static int gn_pin[MAX_SPI_PORT] = {126, 131};
 static int oon_pin[MAX_SPI_PORT] = {125, 130};
 static int adc_ch[MAX_SPI_PORT] = {0, 1};
@@ -188,10 +189,15 @@ static void flush_spi(struct tsb1101_chain *tsb1101)
 	memset(tsb1101->spi_tx, 0, 64);
 	bool ret;
 	ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, 64);
-	if(ret == false)
+	if(ret == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
+	applog(LOG_DEBUG, "%d: %s()", tsb1101->chain_id, __func__);
+	hexdump("send: TX", tsb1101->spi_tx, 64);
+	hexdump("send: RX", tsb1101->spi_rx, 64);
 }
 
 /********** upper layer SPI functions */
@@ -210,8 +216,10 @@ static uint8_t *exec_cmd(struct tsb1101_chain *tsb1101,
 		memcpy(tsb1101->spi_tx + 2, data, len);
 
 	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	if(ret == false)
+	if(ret == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -405,8 +413,10 @@ static uint8_t *cmd_READ_RESULT_BCAST(struct tsb1101_chain *tsb1101)
 		hexdump("send: TX", tsb1101->spi_tx, tx_len);
 		hexdump("send: RX", tsb1101->spi_rx, tx_len);
 //	}
-	if(ret == false)
+	if(ret == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -429,8 +439,10 @@ static uint8_t *cmd_READ_RESULT(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 	tsb1101->spi_tx[1] = chip_id;
 
 	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
-	if(ret == false)
+	if(ret == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -455,8 +467,10 @@ static uint8_t *cmd_CLEAR_OON(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 	assert(ret = spi_transfer_x20(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
 	hexdump("send: TX", tsb1101->spi_tx, tx_len);
 	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-	if(ret == false)
+	if(ret == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -474,8 +488,10 @@ static uint8_t *cmd_READ_HASH(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 	assert(ret = spi_transfer(tsb1101->spi_ctx, tsb1101->spi_tx, tsb1101->spi_rx, tx_len));
 	hexdump("send: TX", tsb1101->spi_tx, tx_len);
 	hexdump("send: RX", tsb1101->spi_rx, tx_len);
-	if(ret == false)
+	if(ret == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -558,7 +574,7 @@ static uint8_t cmd_WRITE_JOB_test(struct tsb1101_chain *tsb1101, uint8_t job_id,
 	ii = 2;
 
 	// WRITE_TARGET
-	tx_len = 9;
+	tx_len = 10;
 	spi_tx[0] = SPI_CMD_WRITE_TARGET;
 	spi_tx[1] = 0;
 	spi_tx[2] = 0x19;
@@ -583,7 +599,7 @@ static uint8_t cmd_WRITE_JOB_test(struct tsb1101_chain *tsb1101, uint8_t job_id,
 	spi_tx += tx_len;
 
 	// RUN_JOB
-	tx_len = 5;
+	tx_len = 8;
 	spi_tx[0] = SPI_CMD_RUN_JOB;
 	spi_tx[1] = chip_id;
 	spi_tx[2] = 0;
@@ -602,8 +618,10 @@ static uint8_t cmd_WRITE_JOB_test(struct tsb1101_chain *tsb1101, uint8_t job_id,
 	ii += 1;
 
 	assert(retb = spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
-	if(retb == false)
+	if(retb == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -710,8 +728,10 @@ static uint8_t cmd_WRITE_JOB_fast(struct tsb1101_chain *tsb1101,
 	ii += 1;
 
 	assert(retb = spi_transfer_x20_a(tsb1101->spi_ctx, tsb1101->xfr, ii));
-	if(retb == false)
+	if(retb == false) {
 		tsb1101->disabled = true;
+		applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
+	}
 	else
 		tsb1101->disabled = false;
 
@@ -1001,11 +1021,30 @@ static bool calc_nonce_range(struct tsb1101_chain *tsb1101)
 		hexdump("send: RX", tsb1101->spi_rx, 12);
 		if(ret == false) {
 			tsb1101->disabled = true;
+			applog(LOG_ERR, "%d: %s() error", tsb1101->chain_id, __func__);
 			break;
 		}
 	}
 
 	return true;
+}
+
+static void reset_gpio(struct tsb1101_chain *tsb1101, int on)
+{
+	int fd_gpio;
+	char gpio_str[64];
+	sprintf(gpio_str, "/sys/class/gpio/gpio%d/value", tsb1101->pinnum_gpio_reset);
+
+	fd_gpio = open(gpio_str, O_WRONLY);
+	if(fd_gpio<0) {
+		applog(LOG_ERR, "%d: %s(%d) error, open error (gpio:%d)", tsb1101->chain_id, __func__, on, tsb1101->pinnum_gpio_reset);
+		return;
+	}
+	if(on)
+		write(fd_gpio, "1", 2);	// reset
+	else
+		write(fd_gpio, "0", 2);	// reset
+	close(fd_gpio);
 }
 
 /*
@@ -1173,6 +1212,7 @@ static bool reinit_chain(struct tsb1101_chain *tsb1101)
 	// chip_index 0, 1, 2, 3, 4, 5, 6,
 	// chip_id    1, 1, 1, 1, 2, 3, 4,
 	// loop                   2, 3, 4, ...
+	set_pin(tsb1101->pinnum_gpio_vctrl, tsb1101->vctrl);
 	if(tsb1101->last_chip) {
 		if(!set_pll_fout_en(tsb1101, 1, 0)) {
 			tsb1101->disabled = true;
@@ -1337,7 +1377,8 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 		chip->work[chip->last_queued_id] = NULL;
 		retval = true;
 	}
-	uint8_t *jobdata = create_job(chip_id, tsb1101->spi_ctx->txb, work);
+	// the chip_id must be 0, because global job
+	uint8_t *jobdata = create_job(0, tsb1101->spi_ctx->txb, work);
 	if (!cmd_WRITE_JOB_fast(tsb1101, job_id, jobdata, work)) {
 		/* give back work */
 		work_completed(tsb1101->cgpu, work);
@@ -1351,14 +1392,22 @@ static bool set_work(struct tsb1101_chain *tsb1101, struct work *work)
 		chip->last_queued_id++;
 		chip->last_queued_id &= JOB_ID_NUM_MASK;
 	}
+
+	int i;
+	for (i = tsb1101->last_chip; i < tsb1101->num_chips; i++) {
+		chip_id = i +1;
+		if(tsb1101->last_chip)
+			chip_id +=  (1-tsb1101->last_chip);
+		exec_cmd(tsb1101, SPI_CMD_READ_ID, chip_id, NULL, 0, 4);
+	}
+
 	return retval;
 }
 
-static bool set_work_test(struct tsb1101_chain *tsb1101, uint8_t chip_id)
+static bool set_work_test(struct tsb1101_chain *tsb1101, uint8_t chip_id, uint8_t job_id)
 {
 	int cid = tsb1101->chain_id;
 	bool retval = false;
-	int job_id;
 	struct work work;
 
 	uint8_t jobdata[] = {
@@ -1369,13 +1418,13 @@ static bool set_work_test(struct tsb1101_chain *tsb1101, uint8_t chip_id)
 		0x9E, 0xB7, 0x91, 0x5C, 0x88, 0x7A, 0x53, 0x6D, 
 		0xC8, 0x02, 0x19, 0x00, 0x89, 0x6C, 0x00, 0x00};
 
-	job_id = 1;
-
-	if (!cmd_WRITE_JOB_test(tsb1101, job_id, jobdata, chip_id)) {
+	memcpy(tsb1101->spi_ctx->txb, jobdata, sizeof(jobdata));
+	if (!cmd_WRITE_JOB_test(tsb1101, job_id, tsb1101->spi_ctx->txb, chip_id)) {
 		retval = false;
 	} else {
 		retval = true;
 	}
+
 	return retval;
 }
 
@@ -1450,12 +1499,10 @@ static bool abort_work(struct tsb1101_chain *tsb1101)
 
 	for (i = (tsb1101->num_chips-1); i>=0; i--) {
 		struct tsb1101_chip *chip = &tsb1101->chips[i];
-		if(chip->disabled) continue;
+		if (is_chip_disabled(tsb1101, i)) continue;
 		chip_id = i +1;
 		if(tsb1101->last_chip)
-			chip_id -=  -(tsb1101->last_chip-1);
-		if (is_chip_disabled(tsb1101, i))
-			continue;
+			chip_id +=  (1-tsb1101->last_chip);
 		check_chip(tsb1101, chip_id, i);
 	}
 	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
@@ -1476,102 +1523,260 @@ void exit_tsb1101_chain(struct tsb1101_chain *tsb1101)
 	free(tsb1101);
 }
 
-#define DEFAULT_TEST_TIMEOUT 4
-#define DEFAULT_TEST_NONCE	0xa4a03c7b
-static uint32_t work_nonce = DEFAULT_TEST_NONCE;
 static int mvolt_array[2] = {400, 420};
+#define DEFAULT_HBTEST_MIN_400MV      (400-40);
+#define DEFAULT_HBTEST_MAX_400MV      (400+40);
+#define DEFAULT_HBTEST_MIN_420MV      (420-42);
+#define DEFAULT_HBTEST_MAX_420MV      (420+42);
+#define DEFAULT_HBTEST_MIN_CORES      (206-10);
+#define DEFAULT_HBTEST_FULLTEST_MSEC (2000)
+
+#define DEFAULT_HBVOLT_SETUPTIME_MSEC (500)
+
+static int hbtest_get_ref_value(char *refstr)
+{
+	int ret = 0;
+	FILE *fwfptr;
+	char cmd[128];
+
+	sprintf(cmd, "/sbin/fw_printenv | /bin/grep %s | /usr/bin/awk -F= '{print $2}'", refstr);
+
+	fwfptr = popen(cmd, "r");
+	if(fwfptr) {
+		char lenstr[16];
+		fgets(lenstr, 16, fwfptr);
+		ret = strtoul(lenstr, NULL, 0);
+		pclose(fwfptr);
+	}
+
+	return ret;
+}
+
+static int job_weight_idx = 0;
 static int hashboard_test(struct tsb1101_chain *tsb1101)
 {
-	int res = 0, i, chip_id;
-	int mvolt_idx = 0;
+	uint8_t *ret;
+	int res = 0, i, chip_id, ii;
+	int mvolt_idx = 0, start_ms;
+
 	applog(LOG_ERR, "----------------------------------------------------------------------");
 	applog(LOG_ERR, "----------------------- hash board test mode!! -----------------------");
 	applog(LOG_ERR, "----------------------------------------------------------------------");
+	int min_mvolt_array[2];
+	int max_mvolt_array[2];
+	int min_cores, min_chips;
+	int fulltest_msec;
+	char dummy[32];
+	FILE *fwfptr;
+
+	min_mvolt_array[0] = hbtest_get_ref_value("hbtest_min_400mv");
+//	if(!min_mvolt_array[0]) min_mvolt_array[0] = DEFAULT_HBTEST_MIN_400MV;
+
+	max_mvolt_array[0] = hbtest_get_ref_value("hbtest_max_400mv");
+	if(!max_mvolt_array[0]) max_mvolt_array[0] = DEFAULT_HBTEST_MAX_400MV;
+	
+	min_mvolt_array[1] = hbtest_get_ref_value("hbtest_min_420mv");
+//	if(!min_mvolt_array[1]) min_mvolt_array[1] = DEFAULT_HBTEST_MIN_420MV;
+
+	max_mvolt_array[1] = hbtest_get_ref_value("hbtest_max_420mv");
+	if(!max_mvolt_array[1]) max_mvolt_array[1] = DEFAULT_HBTEST_MAX_420MV;
+	
+	min_cores = hbtest_get_ref_value("hbtest_min_cores");
+	if(!min_cores) min_cores = DEFAULT_HBTEST_MIN_CORES;
+	
+	min_chips = hbtest_get_ref_value("hbtest_min_chips");
+	if(!min_chips) min_chips = MAX_CHIP_NUM;
+	
+	fulltest_msec = hbtest_get_ref_value("hbtest_fulltest_msec");
+	if(!fulltest_msec) fulltest_msec = DEFAULT_HBTEST_FULLTEST_MSEC;
+	
+	applog(LOG_ERR, "--- 0.400V min adc value : %d ---", min_mvolt_array[0]);
+	applog(LOG_ERR, "--- 0.400V MAX adc value : %d ---", max_mvolt_array[0]);
+	applog(LOG_ERR, "--- 0.420V min adc value : %d ---", min_mvolt_array[1]);
+	applog(LOG_ERR, "--- 0.420V MAX adc value : %d ---", max_mvolt_array[1]);
+	applog(LOG_ERR, "--- minimum core number : %d ---", min_cores);
+	applog(LOG_ERR, "--- full load test time : %d.%03d seconds ---", fulltest_msec/1000, fulltest_msec%1000);
+
 	for(mvolt_idx = 0; mvolt_idx < 2; mvolt_idx++) {
+		cmd_RESET_BCAST(tsb1101);
+
 		set_pin(tsb1101->pinnum_gpio_vctrl, mvolt_idx);
-		cgsleep_us(500000);
+		sprintf(dummy, "at %d.%03dV", mvolt_array[mvolt_idx]/1000, mvolt_array[mvolt_idx]%1000);
+		cgsleep_ms(DEFAULT_HBVOLT_SETUPTIME_MSEC);
+
 		res = get_mvolt(mvolt_idx);
 		if( 
-				(res < (mvolt_array[mvolt_idx]-40)) || 
-				(res > (mvolt_array[mvolt_idx]+40)) ) {
+				(res < min_mvolt_array[mvolt_idx]) || 
+				(res > max_mvolt_array[mvolt_idx]) ) {
 			applog(LOG_ERR, "power error (%dmV detected, it must be %dmV)", res, mvolt_array[mvolt_idx]);
-			continue;
+			res = -1;
+			return res;
 		}
 		applog(LOG_ERR, "-- test chip at %d mV --", mvolt_array[mvolt_idx]);
+
+		// SPI_CMD_AUTO_ADDRESS
+		ret = exec_cmd(tsb1101, SPI_CMD_AUTO_ADDRESS, 0x00, dummy, 32, 2);
+		if(ret[0] != SPI_CMD_AUTO_ADDRESS) {
+			applog(LOG_ERR, "%s: error in AUTO_ADDRESS", dummy);
+			res = -1;
+			return res;
+		}
+		tsb1101->num_chips = ret[1];
+		if(tsb1101->num_chips < min_chips) {
+			applog(LOG_ERR, "%s: chip number FAIL!!(total %d, not %d)", dummy, tsb1101->num_chips, min_chips);
+			res = -1;
+			return res;
+		}
+
+		for (i = 0; i<tsb1101->num_chips; i++) {
+			exec_cmd(tsb1101, SPI_CMD_READ_ID, i+1, NULL, 0, 4);
+		}
+
+		if (!set_pll_config(tsb1101, 0, tsb1101_config_options.pll)) {
+			applog(LOG_ERR, "%s: set_pll_config(%d) FAIL!!", dummy, tsb1101_config_options.pll);
+			res = -1;
+			return res;
+		}
+		if (!set_control(tsb1101, 0, tsb1101_config_options.udiv)) {
+			applog(LOG_ERR, "%s: set_control(%d) FAIL!!", dummy, tsb1101_config_options.udiv);
+			res = -1;
+			return res;
+		}
+
+		cmd_RESET_BCAST(tsb1101);
+		tsb1101->num_cores = 0;
+		tsb1101->perf = 0;
+		cmd_BIST_BCAST(tsb1101, 0);
+
+		for (i = 0; i<tsb1101->num_chips; i++) {
+			struct tsb1101_chip *chip = &tsb1101->chips[i];
+//			if (is_chip_disabled(tsb1101, i)) continue;
+			chip_id = i +1;
+			if(tsb1101->last_chip)
+				chip_id +=  (1-tsb1101->last_chip);
+			check_chip(tsb1101, chip_id, i);
+			if(chip->num_cores < min_cores) {
+				res = -1;
+				applog(LOG_ERR, "%s:\tchip %d has not enough cores (%d, minimum is %d)", dummy, i, chip->num_cores, min_cores);
+			}
+		}
+		if(res == -1) return res;
+
+		applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
+		calc_nonce_range(tsb1101);
+
+		ii = set_work_test(tsb1101, 0, job_weight_idx+1);
+		job_weight_idx++;
+		job_weight_idx&=3;
+		if(ii == false) {
+			applog(LOG_ERR, "%s:\tchip %d FAIL!!(in the write job)",dummy , i);
+			res = -1;
+			return res;
+		}
+		cgsleep_ms(1000);
+
 		for (i = tsb1101->last_chip; i < tsb1101->num_chips; i++) {
-			int ii;
 			uint8_t *ret;
-			uint32_t *ret32;
+
 			chip_id = i +1;
 			if(tsb1101->last_chip)
 				chip_id +=  (1-tsb1101->last_chip);
 
-			ii = set_work_test(tsb1101, chip_id);
-			if(ii == false) {
-				applog(LOG_ERR, "\tchip %d FAIL!!(in the write job)", i);
+#define	DEFAULT_TEST_TIMEOUT	500
+			ii =  get_current_ms();
+			do {
+				ret = exec_cmd(tsb1101, SPI_CMD_READ_JOB_ID, chip_id, NULL, 0, 4);
+				if (ret == NULL || ret[3] != chip_id) {
+					applog(LOG_ERR, "%s:\tchip %d  cmd_READ_JOB_ID failed", dummy, i);
+					res = -1;
+					break;;
+				}
+				if(get_current_ms() > ( ii + (DEFAULT_TEST_TIMEOUT*100))) {
+					break;
+				}
+			} while((ret[2]&2) == 0);
+
+			if(get_current_ms() > ( ii + (DEFAULT_TEST_TIMEOUT*100))) {
+				applog(LOG_ERR, "%s:\tchip %d FAIL!!(gn timeout)", dummy, i);
+				res = -1;
+				cmd_READ_RESULT(tsb1101, chip_id);
+				continue;
+			}
+
+			if((ret[2]&1) == 0) {
+				applog(LOG_ERR, "%s:\tchip %d(chip_id:%d) can't find golden nonce, failed", dummy, i, chip_id);
+				res = -1;
+				cmd_READ_RESULT(tsb1101, chip_id);
+				continue;
+			}
+
+			ii = (job_weight_idx+3)&3; // job_id
+			if (ret[0] != (ii+1)) {
+				applog(LOG_ERR, "%s:\tchip %d FAIL!!(oon job id(%d) in register)", dummy, i, ret[1]);
+				res = -1;
+				continue;
+			}
+			if (ret[1] != (ii+1)) {
+				applog(LOG_ERR, "%s:\tchip %d FAIL!!(gn job id(%d) in register)", dummy, i, ret[1]);
 				res = -1;
 				continue;
 			}
 
-			for(ii=0; ii<DEFAULT_TEST_TIMEOUT; ii++) {
-				if(get_pin(tsb1101->pinnum_gpio_oon) == '0') break;
-				sleep(1);
-			}
+			ret = cmd_READ_RESULT(tsb1101, chip_id);
 
-			if(get_pin(tsb1101->pinnum_gpio_oon) != '0') {
-				applog(LOG_ERR, "\t\tchip %d FAIL!!(not oon)", i);
-				res = -1;
-				continue;
-			}
-			if(get_pin(tsb1101->pinnum_gpio_gn) != '0') {
-				applog(LOG_ERR, "\t\t\tchip %d FAIL!!(not gn)", i);
-				continue;
-			}
-			ret = cmd_READ_RESULT_BCAST(tsb1101);
-			if (ret == NULL) {
-				applog(LOG_ERR, "\t\t\t\tchip %d FAIL!!(spi error)", i);
-				res = -1;
-				continue;
-			}
-
-			// oon check
-			if ((ret[2]&(1<<1)) == 0) {
-				applog(LOG_ERR, "\t\t\t\t\tchip %d FAIL!!(oon pin, but not in register)", i);
-				res = -1;
-				continue;
-			}
-			// golden nonce
-			if ((ret[2]&(1<<0)) == 0) {
-				applog(LOG_ERR, "\t\t\t\t\t\tchip %d FAIL!!(gn pin, but not in register)", i);
-				res = -1;
-				continue;
-			}
-
-			if (ret[3] != i) {
-				applog(LOG_ERR, "\t\t\t\t\t\t\tchip %d FAIL!!(chip id(%d) in register)", i, ret[3]);
-				res = -1;
-				continue;
-			}
-			if (ret[1] != 1) {
-				applog(LOG_ERR, "\t\t\t\t\t\t\t\tchip %d FAIL!!(job id(%d) in register)", i, ret[1]);
-				res = -1;
-				continue;
-			}
-
-			ret = cmd_READ_RESULT(tsb1101, i);
-			ret32 = (uint32_t *)ret;
+			uint32_t *ret32 = (uint32_t *)ret;
 			*ret32 = bswap_32(*ret32);
 			*ret32 -= (tsb1101->chips[i].hash_depth*tsb1101->chips[i].num_cores);
-
-			*ret32 = bswap_32(*ret32);
-			if(*ret32 != work_nonce) {
-				applog(LOG_ERR, "\t\t\t\t\t\t\t\t\tchip %d FAIL!!(nonce result:0x%08x = expected:0x%08x)", *ret32, work_nonce);
+			if(*ret32 != 0x0d473a59) {
+				applog(LOG_ERR, "%s:\tchip %d FAIL!!(nonce:0x%08x is not correct, it must be 0x0d473a59)", dummy, i, *ret32);
 				res = -1;
 				continue;
 			}
-			applog(LOG_ERR, "OK");
+
+			applog(LOG_ERR, "%s:\tchip %d : OK", dummy, i);
 		}
 	}
+	if(res < 0) return res;
+	tsb1101_config_options.test_mode = 0;
+	calc_nonce_range(tsb1101);
+	tsb1101_config_options.test_mode = 1;
+
+	start_ms = get_current_ms();
+//	set_control(tsb1101, 0, 1|(1<<4));	// set OON int
+	do {
+		if(get_pin(tsb1101->pinnum_gpio_gn) == '0') {
+			ret = cmd_READ_RESULT_BCAST(tsb1101);
+
+			if(ret[2]&1) {
+				chip_id = ret[3];
+				ret = cmd_READ_RESULT(tsb1101, chip_id);
+
+				uint32_t *ret32 = (uint32_t *)ret;
+				*ret32 = bswap_32(*ret32);
+				*ret32 -= (tsb1101->chips[chip_id-1].hash_depth*tsb1101->chips[chip_id-1].num_cores);
+				if(*ret32 != 0x0d473a59) {
+					applog(LOG_ERR, "%s:\tchip %d FAIL!!(nonce:0x%08x is not correct, it must be 0x0d473a59)", dummy, i, *ret32);
+					res = -1;
+					continue;
+				}
+			}
+		}
+
+		if(get_pin(tsb1101->pinnum_gpio_oon) == '0') {
+			cmd_CLEAR_OON(tsb1101, 0);
+			ii = set_work_test(tsb1101, 0, job_weight_idx+1);
+			job_weight_idx++;
+			job_weight_idx&=3;
+			if(ii == false) {
+				applog(LOG_ERR, "%s:\tfullload: FAIL!!(in the write job)",dummy);
+				res = -1;
+				break;
+			}
+		}
+
+		ii =  get_current_ms();
+	} while(get_current_ms() < (start_ms + fulltest_msec));
+
 	return res;
 }
 
@@ -1591,7 +1796,10 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	tsb1101->pinnum_gpio_gn    =    gn_pin[i];
 	tsb1101->pinnum_gpio_oon   =   oon_pin[i];
 	tsb1101->pinnum_gpio_vctrl = vctrl_pin[i];
+	tsb1101->pinnum_gpio_reset = reset_pin[i];
 	tsb1101->volt_ch = adc_ch[i];
+	// TODO get volt from config file
+	tsb1101->vctrl = tsb1101->vctrl == 0? 0 : 1;
 
 	tsb1101->num_chips = chain_detect(tsb1101);
 	if (tsb1101->num_chips == 0)
@@ -1608,6 +1816,7 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 	       tsb1101->spi_ctx->config.bus, tsb1101->spi_ctx->config.cs_line,
 	       tsb1101->chain_id, tsb1101->num_chips);
 
+	set_pin(tsb1101->pinnum_gpio_vctrl, tsb1101->vctrl);	// set to 0.4V
 	if (!set_pll_config(tsb1101, 0, tsb1101_config_options.pll))
 		goto failure;
 	if (!set_control(tsb1101, 0, tsb1101_config_options.udiv))
@@ -1623,15 +1832,34 @@ struct tsb1101_chain *init_tsb1101_chain(struct spi_ctx *ctx, int chain_id)
 		if (is_chip_disabled(tsb1101, i)) continue;
 		chip_id = i +1;
 		if(tsb1101->last_chip)
-			chip_id -=  -(tsb1101->last_chip-1);
+			chip_id +=  (1-tsb1101->last_chip);
 		check_chip(tsb1101, chip_id, i);
 	}
 
-#define	DEFAULT_TEST_TIMEOUT	4
 	applog(LOG_DEBUG, "perf = %ld\n", tsb1101->perf);
 	calc_nonce_range(tsb1101);
 	if(tsb1101_config_options.test_mode == 1) {
-		hashboard_test(tsb1101);
+		if(hashboard_test(tsb1101)<0) {
+			applog(LOG_ERR, "TEST FAIL");
+
+			system("echo timer > /sys/class/leds/red/trigger");
+			system("echo 300 > /sys/class/leds/red/delay_on");
+			system("echo 300 > /sys/class/leds/red/delay_off");
+			system("echo timer > /sys/class/leds/green/trigger");
+			system("echo 300 > /sys/class/leds/green/delay_on");
+			system("echo 0 > /sys/class/leds/green/delay_off");
+		}
+		else {
+			applog(LOG_ERR, "TEST OK");
+			system("echo timer > /sys/class/leds/red/trigger");
+			system("echo 300 > /sys/class/leds/red/delay_on");
+			system("echo 0 > /sys/class/leds/red/delay_off");
+			system("echo timer > /sys/class/leds/green/trigger");
+			system("echo 300 > /sys/class/leds/green/delay_on");
+			system("echo 300 > /sys/class/leds/green/delay_off");
+		}
+		reset_gpio(tsb1101, 0);
+		while(1) cgsleep_ms(2000);
 	}
 
 	applog(LOG_WARNING, "%d: found %d chips with total %d active cores",
@@ -1722,11 +1950,12 @@ void tsb1101_detect(bool hotplug)
 		sscanf(opt_tsb1101_min_chips, "%d", &min_chips);
 		tsb1101_config_options.min_chips = min_chips;
 	}
-	if (opt_tsb1101_chiptest != NULL) {
+	tsb1101_config_options.test_mode = 0;
+	if (opt_tsb1101_chiptest != NULL)
 		tsb1101_config_options.test_mode = 1;
-	}
-	else
-		tsb1101_config_options.test_mode = 0;
+	if (get_pin(15) == '0')
+		tsb1101_config_options.test_mode = 1;
+
 	applog(LOG_DEBUG, "TSB1101 detect");
 
 	/* register global SPI context */
@@ -1928,7 +2157,7 @@ static void tsb1101_flush_work(struct cgpu_info *cgpu)
 		applog(LOG_ERR, "%d: failed to abort work in chip chain!", cid);
 	}
 	/* flush the work chips were currently hashing */
-	for (i = 0; i < tsb1101->num_active_chips; i++) {
+	for (i = tsb1101->last_chip; i < tsb1101->num_chips; i++) {
 		int j;
 		struct tsb1101_chip *chip = &tsb1101->chips[i];
 		for (j = 0; j < MAX_JOB_ID_NUM; j++) {
